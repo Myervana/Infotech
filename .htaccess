@@ -1,0 +1,69 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Redirect all requests to the public folder
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
+
+# ============================
+# 🔒 SECURITY RULES
+# ============================
+
+# Deny access to sensitive files and folders
+<FilesMatch "(^\.|composer\.json|composer\.lock|artisan|server\.php|storage|vendor|env|.git)">
+    Require all denied
+</FilesMatch>
+
+# Disable directory browsing
+Options -Indexes
+
+# Prevent script execution in storage and vendor directories
+<Directory "/storage">
+    RemoveHandler .php .phtml .php3 .php4 .php5 .php7
+    RemoveType .php .phtml .php3 .php4 .php5 .php7
+</Directory>
+
+<Directory "/vendor">
+    RemoveHandler .php .phtml .php3 .php4 .php5 .php7
+    RemoveType .php .phtml .php3 .php4 .php5 .php7
+</Directory>
+
+# Block access to sensitive files
+<FilesMatch "(^\.|\.env|composer\.json|artisan|server\.php|.git|.env|.htaccess|phpunit\.xml|storage|vendor)">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Disable directory listing
+Options -Indexes
+# ----------------------------------------------------------------------
+# Block access to storage and vendor folders
+# ----------------------------------------------------------------------
+RedirectMatch 403 ^/(vendor|storage|config|bootstrap|resources|database)/.*$
+
+
+
+
+# Prevent clickjacking
+Header always append X-Frame-Options SAMEORIGIN
+
+# Prevent content sniffing
+Header set X-Content-Type-Options nosniff
+
+# Prevent XSS
+Header set X-XSS-Protection "1; mode=block"
+
+# ============================
+# 🧱 OPTIONAL: Block known hacker tools
+# ============================
+SetEnvIfNoCase User-Agent "curl" bad_bot
+SetEnvIfNoCase User-Agent "sqlmap" bad_bot
+SetEnvIfNoCase User-Agent "nikto" bad_bot
+SetEnvIfNoCase User-Agent "nmap" bad_bot
+SetEnvIfNoCase User-Agent "wpscan" bad_bot
+SetEnvIfNoCase User-Agent "acunetix" bad_bot
+SetEnvIfNoCase User-Agent "kali" bad_bot
+SetEnvIfNoCase User-Agent "metasploit" bad_bot
+Order Allow,Deny
+Allow from all
+Deny from env=bad_bot

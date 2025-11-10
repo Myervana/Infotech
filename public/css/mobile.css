@@ -1,0 +1,104 @@
+/* Global mobile-first responsive styles */
+
+/* Reset some defaults for better mobile rendering */
+html, body {
+	-webkit-text-size-adjust: 100%;
+	text-size-adjust: 100%;
+}
+
+/* Utility classes */
+.hidden-mobile { display: block; }
+.only-mobile { display: none; }
+
+/* Layout adaptations for small screens */
+@media (max-width: 768px) {
+	/* Show mobile-only elements, hide desktop-only */
+	.hidden-mobile { display: none !important; }
+	.only-mobile { display: block !important; }
+
+	/* Login layout adjustments */
+	body {
+		padding: 12px !important;
+		overflow: auto !important;
+	}
+	/* Ensure container fills screen width and stacks content */
+	.container {
+		max-width: 100% !important;
+		height: auto !important;
+		border-radius: 16px !important;
+	}
+	.form-container,
+	.sign-up-container,
+	.sign-in-container {
+		position: relative !important;
+		width: 100% !important;
+		left: 0 !important;
+		right: 0 !important;
+		transform: none !important;
+		min-height: auto !important;
+	}
+	.overlay-container,
+	.overlay {
+		display: none !important;
+	}
+	/* Inputs/buttons comfortable taps */
+	input, button, select {
+		font-size: 16px !important;
+		padding: 12px 14px !important;
+	}
+	/* OTP inputs */
+	.otp-input input,
+	.sar-otp-digit,
+	.otp-digit {
+		width: 44px !important;
+		height: 50px !important;
+		font-size: 20px !important;
+	}
+
+	/* Dashboard: stack nav above content */
+	nav {
+		position: static !important;
+		width: 100% !important;
+		flex-direction: row !important;
+		justify-content: space-between !important;
+		padding: 10px 12px !important;
+	}
+	main, .content, .dashboard-content {
+		width: 100% !important;
+		margin: 0 !important;
+		padding: 12px !important;
+	}
+	/* Cards and grids collapse to single column */
+	.grid, .cards, .stats, .charts, .panels, .activity-panel {
+		display: grid !important;
+		grid-template-columns: 1fr !important;
+		gap: 12px !important;
+	}
+	.card, .stat-card, .chart, .panel, .activity-box {
+		min-width: 0 !important;
+	}
+
+	/* Tables: make horizontally scrollable */
+	.table-responsive { overflow-x: auto; }
+	table { width: 700px; max-width: none; }
+
+	/* Modals full-screen on mobile */
+	.modal, .sa-modal, #passwordResetModal, #emailVerificationModal, #superAdminResetModal {
+		align-items: flex-start !important;
+	}
+	.modal .modal-content, .sa-modal .modal-content {
+		width: 100% !important;
+		height: auto !important;
+		border-radius: 16px !important;
+		margin: 12px !important;
+	}
+}
+
+/* Extra-small phones */
+@media (max-width: 360px) {
+	.otp-input input,
+	.sar-otp-digit,
+	.otp-digit { width: 40px !important; height: 46px !important; }
+	button { padding: 10px 12px !important; }
+}
+
