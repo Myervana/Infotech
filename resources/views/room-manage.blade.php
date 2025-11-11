@@ -1764,41 +1764,80 @@
                     $usableItems = $roomItems->where('status', 'Usable')->count();
                     $unusableItems = $roomItems->where('status', 'Unusable')->count();
                     
-                    // Group by PC numbers within this room
+                    // Group by PC numbers (full set items) and Solo items within this room
                     $pcGroups = [];
-                    $individualItems = [];
+                    $soloItems = [];
                     
                     foreach($roomItems as $item) {
-                        // Extract PC number from various sources - look for 3-digit number suffix
-                        $pcNumber = null;
+                        // Check if item is part of a full set (PC# grouped items)
+                        // PC# items: is_full_set_item = true AND full_set_id exists
+                        // Solo items: is_full_set_item = false OR full_set_id is null
+                        $isFullSetItem = false;
                         
-                        // Try to extract from barcode (SU001, M001, KB001, PC001, etc.)
-                        if (preg_match('/(\d{3})$/', $item->barcode, $matches)) {
-                            $pcNumber = intval($matches[1]);
-                        }
-                        // Try to extract from serial number (SU001, M001, KB001, PC001, etc.)
-                        elseif (preg_match('/(\d{3})$/', $item->serial_number, $matches)) {
-                            $pcNumber = intval($matches[1]);
-                        }
-                        // Try to extract from full_set_id format: FS-RANDOMID-001 or similar
-                        elseif ($item->full_set_id && preg_match('/(\d{3})$/', $item->full_set_id, $matches)) {
-                            $pcNumber = intval($matches[1]);
-                        }
-                        // Try to extract any 3-digit number from barcode/serial
-                        elseif (preg_match('/(\d{3})/', $item->barcode . ' ' . $item->serial_number, $matches)) {
-                            $pcNumber = intval($matches[1]);
+                        // Primary check: use database flags
+                        if ($item->is_full_set_item && $item->full_set_id) {
+                            // Explicitly marked as full set item in database
+                            $isFullSetItem = true;
+                        } elseif ($item->full_set_id && !$item->is_full_set_item) {
+                            // Has full_set_id but flag not set (legacy data) - treat as full set
+                            $isFullSetItem = true;
                         }
                         
-                        if ($pcNumber !== null) {
-                            $pcGroups[$pcNumber][] = $item;
+                        if ($isFullSetItem) {
+                            // This is a PC# item (full set) - extract PC number from barcode
+                            // Format: CL1-SU001, CL1-M001, etc. (last 3 digits = PC number)
+                            $pcNumber = null;
+                            
+                            // Extract PC number from barcode (last 3 digits)
+                            // Full set barcodes: ROOMCODE-DEVICECODE001 (e.g., CL1-SU001 = PC 001)
+                            if (preg_match('/(\d{3})$/', $item->barcode, $matches)) {
+                                $pcNumber = intval($matches[1]);
+                            }
+                            
+                            if ($pcNumber !== null) {
+                                // Group by PC number
+                                if (!isset($pcGroups[$pcNumber])) {
+                                    $pcGroups[$pcNumber] = [];
+                                }
+                                $pcGroups[$pcNumber][] = $item;
+                            } else {
+                                // If we can't extract PC number but it's a full set item, group by full_set_id
+                                $fullSetId = $item->full_set_id;
+                                if ($fullSetId) {
+                                    // Use full_set_id as key to group items together
+                                    $pcKey = 'fullset-' . $fullSetId;
+                                    if (!isset($pcGroups[$pcKey])) {
+                                        $pcGroups[$pcKey] = [];
+                                    }
+                                    $pcGroups[$pcKey][] = $item;
+                                } else {
+                                    // Should not happen, but treat as solo item if no full_set_id
+                                    $soloItems[] = $item;
+                                }
+                            }
                         } else {
-                            // If we can't determine PC number, treat as individual item
-                            $individualItems[] = $item;
+                            // Solo items (NOT part of full set/PC#)
+                            // is_full_set_item = false AND full_set_id is null
+                            // These are items added through regular form, not "Add Component"
+                            $soloItems[] = $item;
                         }
                     }
                     
-                    // Sort PC groups by number
-                    ksort($pcGroups, SORT_NUMERIC);
+                    // Sort PC groups: numeric PC numbers first, then fullset groups
+                    uksort($pcGroups, function($a, $b) {
+                        $aIsNumeric = is_numeric($a);
+                        $bIsNumeric = is_numeric($b);
+                        
+                        if ($aIsNumeric && $bIsNumeric) {
+                            return intval($a) - intval($b);
+                        } elseif ($aIsNumeric) {
+                            return -1; // Numeric comes first
+                        } elseif ($bIsNumeric) {
+                            return 1; // Numeric comes first
+                        } else {
+                            return strcmp($a, $b); // String comparison for fullset keys
+                        }
+                    });
                     
                     // Debug: Show grouping results
                     // dd($pcGroups, $individualItems);
@@ -1861,11 +1900,23 @@
                         @php
                             $globalQuantityCounter = 1; // Start continuous numbering
                         @endphp
-                        @foreach($pcGroups as $pcNumber => $pcItems)
+                        @foreach($pcGroups as $pcKey => $pcItems)
                             @php
                                 $pcUsableCount = collect($pcItems)->where('status', 'Usable')->count();
                                 $pcTotalCount = count($pcItems);
-                                $displayPcNumber = str_pad($pcNumber, 3, '0', STR_PAD_LEFT);
+                                
+                                // Handle both numeric PC numbers and fullset string keys
+                                if (is_numeric($pcKey)) {
+                                    $displayPcNumber = str_pad($pcKey, 3, '0', STR_PAD_LEFT);
+                                    $pcTitle = 'PC' . $displayPcNumber;
+                                    $pcId = $pcKey;
+                                } else {
+                                    // For fullset keys like 'fullset-xxx', extract a display number or use the key
+                                    $displayPcNumber = 'SET';
+                                    $pcTitle = 'PC Set';
+                                    $pcId = Str::slug($pcKey);
+                                }
+                                
                                 $pcStartQuantity = $globalQuantityCounter; // Track starting quantity for this PC
                                 $globalQuantityCounter += $pcTotalCount; // Update global counter
                                 
@@ -1873,10 +1924,10 @@
                                 $componentTypes = collect($pcItems)->pluck('device_category')->unique()->values()->toArray();
                                 $componentTypesStr = implode(', ', $componentTypes);
                             @endphp
-                            <div class="pc-group" id="pc-{{ Str::slug($roomTitle) }}-{{ $pcNumber }}" data-container="{{ Str::slug($roomTitle) }}-{{ $pcNumber }}">
-                                <div class="pc-header" onclick="togglePCGroup('{{ Str::slug($roomTitle) }}-{{ $pcNumber }}')">
+                            <div class="pc-group" id="pc-{{ Str::slug($roomTitle) }}-{{ $pcId }}" data-container="{{ Str::slug($roomTitle) }}-{{ $pcId }}">
+                                <div class="pc-header" onclick="togglePCGroup('{{ Str::slug($roomTitle) }}-{{ $pcId }}')">
                                     <div class="pc-title">
-                                        PC{{ $displayPcNumber }}
+                                        {{ $pcTitle }}
                                         <small>
                                             ({{ $componentTypesStr }})
                                         </small>
@@ -1892,7 +1943,9 @@
                                             <i class="fas fa-hashtag"></i>
                                             Qty: {{ $pcStartQuantity }}-{{ $pcStartQuantity + $pcTotalCount - 1 }}
                                         </div>
-                                        <button class="room-delete-btn" style="margin-left:8px;" onclick="openAddComponentModal('{{ addslashes($roomTitle) }}','{{ $displayPcNumber }}', event)"><i class="fas fa-plus"></i> Add Component</button>
+                                        @if(is_numeric($pcKey))
+                                        <button class="room-delete-btn" style="margin-left:8px;" onclick="openAddComponentModal('{{ addslashes($roomTitle) }}','{{ $pcKey }}', event)"><i class="fas fa-plus"></i> Add Component</button>
+                                        @endif
                                         <button class="room-delete-btn" style="margin-left:8px; background:#17a2b8;" onclick="printAllBarcodes()"><i class="fas fa-print"></i> Print Barcode</button>
                                         <div class="toggle-icon">▶</div>
                                     </div>
@@ -1929,17 +1982,14 @@
                                                     </td>
                                                         <td>
                                                             @if($item->photo)
-                                                                <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="
-                                                                    data-src="{{ route('room-item.photo', $item->id) }}"
-                                                                    alt="Item Photo"
-                                                                    class="img-thumbnail lazy-img"
-                                                                    style="max-width: 40px;"
-                                                                    loading="lazy" decoding="async" fetchpriority="low">
-                                                            @else
-                                                                <img src="{{ asset('path/to/your/placeholder.jpg') }}"
+                                                                <img src="{{ route('room-item.photo', $item->id) }}"
                                                                     alt="Item Photo"
                                                                     class="img-thumbnail"
-                                                                    style="max-width: 40px;">
+                                                                    style="max-width: 40px; height: 40px; object-fit: cover; border-radius: 4px;"
+                                                                    onerror="this.onerror=null; this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'40\' height=\'40\'%3E%3Crect width=\'40\' height=\'40\' fill=\'%23e2e8f0\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%23999\' font-size=\'20\'%3E📷%3C/text%3E%3C/svg%3E';"
+                                                                    loading="lazy">
+                                                            @else
+                                                                <div style="width: 40px; height: 40px; background: #e2e8f0; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 20px;">📷</div>
                                                             @endif
                                                         </td>
                                                         <td>
@@ -1995,101 +2045,129 @@
 
                         
 
-                        {{-- Individual Items --}}
-                        @if(!empty($individualItems))
+                        {{-- Solo Items Group (items NOT part of full set/PC#) --}}
+                        @if(!empty($soloItems))
                             @php
-                                $individualStartQuantity = $globalQuantityCounter; // Continue from PC groups
+                                $soloStartQuantity = $globalQuantityCounter; // Continue from PC groups
+                                $soloUsableCount = collect($soloItems)->where('status', 'Usable')->count();
+                                $soloTotalCount = count($soloItems);
+                                
+                                // Get unique component types for solo items
+                                $soloComponentTypes = collect($soloItems)->pluck('device_category')->unique()->values()->toArray();
+                                $soloComponentTypesStr = implode(', ', $soloComponentTypes);
                             @endphp
-                            <div class="table-container" data-container="{{ Str::slug($roomTitle) }}-individual">
-                                <table>
-                                    <thead>
-                                        <tr>
-                                            <th>
-                                                <input type="checkbox" class="select-all-checkbox" onchange="toggleSelectAll('{{ Str::slug($roomTitle) }}-individual')">
-                                            </th>
-                                            <th>Photo</th>
-                                            <th>Category</th>
-                                            <th>Brand</th>
-                                            <th>Model</th>
-                                            <th>Type</th>
-                                            <th>Serial #</th>
-                                            <th>Description</th>
-                                            <th>Barcode</th>
-                                            <th>Quantity</th>
-                                            <th>Status</th>
-                                            <th>Date Added</th>
-                                            <th>Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @foreach($individualItems as $index => $item)
-                                        @php
-                                            $continuousQuantity = $individualStartQuantity + $index;
-                                        @endphp
-                                        <tr>
-                                            <td>
-                                                <input type="checkbox" class="item-checkbox" data-room="{{ Str::slug($roomTitle) }}" data-item-id="{{ $item->id }}" onchange="updateBulkActions()">
-                                            </td>
-                                            <td>
-                                                @if($item->photo)
-                                                    <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="
-                                                        data-src="{{ route('room-item.photo', $item->id) }}"
-                                                        alt="Item Photo"
-                                                        class="img-thumbnail lazy-img"
-                                                        style="max-width: 40px;"
-                                                        loading="lazy" decoding="async" fetchpriority="low">
-                                                @else
-                                                    <img src="{{ asset('path/to/your/placeholder.jpg') }}"
-                                                        alt="Item Photo"
-                                                        class="img-thumbnail"
-                                                        style="max-width: 40px;">
-                                                @endif
-                                            </td>
-                                            <td>
-                                                <span class="badge badge-category">
-                                                    {{ $item->device_category }}
-                                                </span>
-                                            </td>
-                                            <td>{{ $item->brand ?? 'N/A' }}</td>
-                                            <td>{{ $item->model ?? 'N/A' }}</td>
-                                            <td>
-                                                <span class="badge badge-type">
-                                                    {{ $item->device_type ?? 'Uncategorized' }}
-                                                </span>
-                                            </td>
-                                            <td><span class="serial-code">{{ $item->serial_number }}</span></td>
-                                            <td>{{ Str::limit($item->description, 30) }}</td>
-                                            <td>
-                                                <div id="barcode-{{ $item->id }}" class="barcode-wrapper">
-                                                    <div class="barcode-text">{{ $item->barcode }}</div>
-                                                    <div class="bwippbarcode">
-                                                        <img src="data:image/png;base64,{{ DNS1D::getBarcodePNG($item->barcode ?? '000000000', 'C128', 2.0, 50) }}" alt="{{ $item->barcode ?? 'N/A' }}" style="display:block; width: 200px; height: 50px; object-fit: contain;">
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td>
-                                                <span class="badge badge-quantity">{{ $continuousQuantity }}</span>
-                                            </td>
-                                            <td>
-                                                <span class="badge {{ $item->status === 'Unusable' ? 'badge-unusable' : 'badge-usable' }}">
-                                                    {{ $item->status }}
-                                                </span>
-                                            </td>
-                                            <td>{{ $item->created_at->format('M d, Y') }}</td>
-                                            <td>
-                                                <div class="action-buttons">
-                                                    <button onclick="openEditModal({{ $item->id }}, '{{ htmlspecialchars($item->room_title, ENT_QUOTES) }}', '{{ htmlspecialchars($item->device_category, ENT_QUOTES) }}', '{{ htmlspecialchars($item->brand ?? '', ENT_QUOTES) }}', '{{ htmlspecialchars($item->model ?? '', ENT_QUOTES) }}', '{{ htmlspecialchars($item->description ?? '', ENT_QUOTES) }}')" class="icon-btn edit">
-                                                        <i class="fas fa-edit"></i>
-                                                    </button>
-                                                    <button onclick="printBarcode({{ $item->id }})" class="icon-btn print">
-                                                        <i class="fas fa-print"></i>
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                        @endforeach
-                                    </tbody>
-                                </table>
+                            <div class="pc-group" id="pc-{{ Str::slug($roomTitle) }}-solo" data-container="{{ Str::slug($roomTitle) }}-solo">
+                                <div class="pc-header" onclick="togglePCGroup('{{ Str::slug($roomTitle) }}-solo')">
+                                    <div class="pc-title">
+                                        Solo Items
+                                        <small>
+                                            ({{ $soloComponentTypesStr }})
+                                        </small>
+                                    </div>
+                                    <div class="pc-stats">
+                                        <div class="stat-item">
+                                            {{ $soloTotalCount }} items
+                                        </div>
+                                        <div class="stat-item">
+                                            {{ $soloUsableCount }}/{{ $soloTotalCount }} usable
+                                        </div>
+                                        <div class="stat-item">
+                                            <i class="fas fa-hashtag"></i>
+                                            Qty: {{ $soloStartQuantity }}-{{ $soloStartQuantity + $soloTotalCount - 1 }}
+                                        </div>
+                                        <div class="toggle-icon">▶</div>
+                                    </div>
+                                </div>
+
+                                <div class="pc-content">
+                                    <div class="table-container">
+                                        <table class="maintenance-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>
+                                                        <input type="checkbox" class="select-all-checkbox" onchange="toggleSelectAll('{{ Str::slug($roomTitle) }}-solo')">
+                                                    </th>
+                                                    <th>Photo</th>
+                                                    <th>Barcode</th>
+                                                    <th>Category</th>
+                                                    <th>Brand/Model</th>
+                                                    <th>Serial Number</th>
+                                                    <th>Description</th>
+                                                    <th>Quantity</th>
+                                                    <th>Status</th>
+                                                    <th>Date Added</th>
+                                                    <th>Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach($soloItems as $index => $item)
+                                                @php
+                                                    $continuousQuantity = $soloStartQuantity + $index;
+                                                @endphp
+                                                <tr>
+                                                    <td>
+                                                        <input type="checkbox" class="item-checkbox" data-room="{{ Str::slug($roomTitle) }}" data-item-id="{{ $item->id }}" onchange="updateBulkActions()">
+                                                    </td>
+                                                    <td>
+                                                        @if($item->photo)
+                                                            <img src="{{ route('room-item.photo', $item->id) }}"
+                                                                alt="Item Photo"
+                                                                class="img-thumbnail"
+                                                                style="max-width: 40px; height: 40px; object-fit: cover; border-radius: 4px;"
+                                                                onerror="this.onerror=null; this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'40\' height=\'40\'%3E%3Crect width=\'40\' height=\'40\' fill=\'%23e2e8f0\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%23999\' font-size=\'20\'%3E📷%3C/text%3E%3C/svg%3E';"
+                                                                loading="lazy">
+                                                        @else
+                                                            <div style="width: 40px; height: 40px; background: #e2e8f0; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 20px;">📷</div>
+                                                        @endif
+                                                    </td>
+                                                    <td>
+                                                        <div id="barcode-{{ $item->id }}" class="barcode-wrapper">
+                                                            <div class="barcode-text">{{ $item->barcode }}</div>
+                                                            <div class="bwippbarcode">
+                                                                <img src="data:image/png;base64,{{ DNS1D::getBarcodePNG($item->barcode ?? '000000000', 'C128', 2.0, 50) }}" alt="{{ $item->barcode ?? 'N/A' }}" style="display:block; width: 200px; height: 50px; object-fit: contain;">
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td>
+                                                        <div class="device-category">{{ $item->device_category }}</div>
+                                                    </td>
+                                                    <td>
+                                                        <div class="device-brand-model">
+                                                            <strong>{{ $item->brand ?? 'N/A' }}</strong>
+                                                            @if($item->model)
+                                                                <br><small>{{ $item->model }}</small>
+                                                            @endif
+                                                        </div>
+                                                    </td>
+                                                    <td>
+                                                        <code class="serial-number">{{ $item->serial_number }}</code>
+                                                    </td>
+                                                    <td>
+                                                        <div class="device-description">{{ $item->description }}</div>
+                                                    </td>
+                                                    <td>
+                                                        <span class="badge badge-quantity">{{ $continuousQuantity }}</span>
+                                                    </td>
+                                                    <td>
+                                                        <span class="badge {{ $item->status === 'Unusable' ? 'badge-unusable' : 'badge-usable' }}">{{ $item->status ?? 'Not Set' }}</span>
+                                                    </td>
+                                                    <td>{{ $item->created_at->format('M d, Y') }}</td>
+                                                    <td>
+                                                        <div class="action-buttons">
+                                                            <button onclick="openEditModal({{ $item->id }}, '{{ htmlspecialchars($item->room_title, ENT_QUOTES) }}', '{{ htmlspecialchars($item->device_category, ENT_QUOTES) }}', '{{ htmlspecialchars($item->brand ?? '', ENT_QUOTES) }}', '{{ htmlspecialchars($item->model ?? '', ENT_QUOTES) }}', '{{ htmlspecialchars($item->description ?? '', ENT_QUOTES) }}')" class="icon-btn edit">
+                                                                <i class="fas fa-edit"></i>
+                                                            </button>
+                                                            <button onclick="printBarcode({{ $item->id }})" class="icon-btn print">
+                                                                <i class="fas fa-print"></i>
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                                @endforeach
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
                             </div>
                         @endif
                     </div>
@@ -2123,7 +2201,12 @@
                     <div class="form-step" id="edit-step-1" data-step="1">
                         <div class="form-group">
                             <label>Upload New Photo</label>
-                            <input type="file" name="photo" accept="image/*">
+                            <input type="file" name="photo" id="edit-photo-input" accept="image/jpeg,image/jpg,image/jfif,image/png,image/gif,image/webp,image/bmp" onchange="previewPhoto(this, 'edit-photo-preview')">
+                            <small style="color: #666; font-size: 0.85em;">Accepted formats: JPEG, JPG, JFIF, PNG, GIF, WEBP, BMP (Max: 2MB)</small>
+                            <div id="edit-photo-preview" style="margin-top: 10px; display: none;">
+                                <img id="edit-photo-preview-img" src="" alt="Preview" style="max-width: 200px; max-height: 200px; border-radius: 4px; border: 1px solid #ddd; object-fit: contain;">
+                                <button type="button" onclick="clearPhotoPreview('edit-photo-input', 'edit-photo-preview')" style="margin-top: 5px; padding: 4px 8px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85em;">Remove</button>
+                            </div>
                         </div>
                         <div class="form-group">
                             <label>Room Title</label>
@@ -2262,7 +2345,12 @@
                     <div class="form-step" id="step-1" data-step="1">
                         <div class="form-group">
                             <label>Upload Photo</label>
-                            <input type="file" name="photo" accept="image/*">
+                            <input type="file" name="photo" id="add-photo-input" accept="image/jpeg,image/jpg,image/jfif,image/png,image/gif,image/webp,image/bmp" onchange="previewPhoto(this, 'add-photo-preview')">
+                            <small style="color: #666; font-size: 0.85em;">Accepted formats: JPEG, JPG, JFIF, PNG, GIF, WEBP, BMP (Max: 2MB)</small>
+                            <div id="add-photo-preview" style="margin-top: 10px; display: none;">
+                                <img id="add-photo-preview-img" src="" alt="Preview" style="max-width: 200px; max-height: 200px; border-radius: 4px; border: 1px solid #ddd; object-fit: contain;">
+                                <button type="button" onclick="clearPhotoPreview('add-photo-input', 'add-photo-preview')" style="margin-top: 5px; padding: 4px 8px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85em;">Remove</button>
+                            </div>
                         </div>
                         <div class="form-group">
                             <label>Room Title</label>
@@ -2447,7 +2535,12 @@
                         </div>
                         <div>
                             <label>Photo (optional)</label>
-                            <input type="file" name="photo" accept="image/*">
+                            <input type="file" name="photo" id="component-photo-input" accept="image/jpeg,image/jpg,image/jfif,image/png,image/gif,image/webp,image/bmp" onchange="previewPhoto(this, 'component-photo-preview')">
+                            <small style="color: #666; font-size: 0.85em;">Accepted formats: JPEG, JPG, JFIF, PNG, GIF, WEBP, BMP (Max: 2MB)</small>
+                            <div id="component-photo-preview" style="margin-top: 10px; display: none;">
+                                <img id="component-photo-preview-img" src="" alt="Preview" style="max-width: 200px; max-height: 200px; border-radius: 4px; border: 1px solid #ddd; object-fit: contain;">
+                                <button type="button" onclick="clearPhotoPreview('component-photo-input', 'component-photo-preview')" style="margin-top: 5px; padding: 4px 8px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85em;">Remove</button>
+                            </div>
                         </div>
                     </div>
                     <div style="margin-top:12px; text-align:right; display:flex; gap:8px; justify-content:flex-end;">
@@ -2605,6 +2698,16 @@
         document.getElementById(modalId).classList.remove('show');
         document.getElementById('editForm').reset();
         document.getElementById('stepItemForm').reset();
+        
+        // Clear photo previews when closing modals
+        if (modalId === 'editModal') {
+            clearPhotoPreview('edit-photo-input', 'edit-photo-preview');
+        } else if (modalId === 'stepModal') {
+            clearPhotoPreview('add-photo-input', 'add-photo-preview');
+        } else if (modalId === 'addComponentModal') {
+            clearPhotoPreview('component-photo-input', 'component-photo-preview');
+        }
+        
         toggleStepCustomRoom();
         toggleStepFullSet();
     }
@@ -3330,6 +3433,81 @@
         setTimeout(() => {
             alert.remove();
         }, 300);
+    }
+
+    // Photo preview function
+    function previewPhoto(input, previewContainerId) {
+        const previewContainer = document.getElementById(previewContainerId);
+        const previewImg = document.getElementById(previewContainerId + '-img');
+        
+        if (input.files && input.files[0]) {
+            const file = input.files[0];
+            
+            // Check file size (2MB = 2 * 1024 * 1024 bytes)
+            if (file.size > 2 * 1024 * 1024) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'File Too Large',
+                    text: 'The photo must be less than 2MB. Please choose a smaller file.',
+                    confirmButtonColor: '#667eea'
+                });
+                input.value = '';
+                previewContainer.style.display = 'none';
+                return;
+            }
+            
+            // Check if it's an image file
+            if (!file.type.match('image.*')) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Invalid File Type',
+                    text: 'Please select a valid image file (JPG, JPEG, JFIF, PNG, GIF, WEBP, or BMP).',
+                    confirmButtonColor: '#667eea'
+                });
+                input.value = '';
+                previewContainer.style.display = 'none';
+                return;
+            }
+            
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                previewImg.src = e.target.result;
+                previewContainer.style.display = 'block';
+            };
+            
+            reader.onerror = function() {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error Loading Image',
+                    text: 'There was an error loading the image. Please try another file.',
+                    confirmButtonColor: '#667eea'
+                });
+                input.value = '';
+                previewContainer.style.display = 'none';
+            };
+            
+            reader.readAsDataURL(file);
+        } else {
+            previewContainer.style.display = 'none';
+        }
+    }
+
+    // Clear photo preview function
+    function clearPhotoPreview(inputId, previewContainerId) {
+        const input = document.getElementById(inputId);
+        const previewContainer = document.getElementById(previewContainerId);
+        const previewImg = document.getElementById(previewContainerId + '-img');
+        
+        if (input) {
+            input.value = '';
+        }
+        if (previewImg) {
+            previewImg.src = '';
+        }
+        if (previewContainer) {
+            previewContainer.style.display = 'none';
+        }
     }
 
     document.addEventListener('DOMContentLoaded', (event) => {

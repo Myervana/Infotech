@@ -94,6 +94,11 @@ class RoomManagementController extends Controller
         $serialNumber = $isUpdate ?
         $oldSerialNumber : $this->generateSerialNumber();
 
+        // For new solo items (not updates), explicitly set as non-full-set items
+        // Only "Add Component" should create full set items
+        $isFullSetItem = $isUpdate ? $oldIsFullSetItem : false;
+        $fullSetId = $isUpdate ? $oldFullSetId : null;
+        
         $itemData = [
             'user_id' => auth()->id(),
             'room_title' => $roomTitle,
@@ -107,8 +112,8 @@ class RoomManagementController extends Controller
             'description' => $validatedData['description'],
             'quantity' => $validatedData['quantity'],
             'status' => $oldStatus ?? $request->status,
-            'full_set_id' => $oldFullSetId,
-            'is_full_set_item' => $oldIsFullSetItem,
+            'full_set_id' => $fullSetId,
+            'is_full_set_item' => $isFullSetItem,
         ];
         
         if ($isUpdate) {
@@ -1064,8 +1069,8 @@ class RoomManagementController extends Controller
         $deviceCode = $deviceCodes[$deviceCategory] ??
         strtoupper(substr(str_replace(' ', '', $deviceCategory), 0, 2));
 
-        // Generate barcode in format: CL1-SU001
-        $basePrefix = $roomCode . '-' . $deviceCode;
+        // Generate barcode in format: CL1-S-M001 (RoomCode-S-DeviceCodeNumber) for solo items
+        $basePrefix = $roomCode . '-S-' . $deviceCode;
 
         // Find the highest existing number for this prefix in the same room
         // Always filter by user to prevent conflicts
@@ -1079,7 +1084,7 @@ class RoomManagementController extends Controller
             
         $nextNumber = 1;
         if ($existingItems) {
-            // Extract the number from the existing barcode (format: "CL1-SU001")
+            // Extract the number from the existing barcode (format: "CL1-S-M001")
             if (preg_match('/-(\d+)$/', $existingItems->barcode, $matches)) {
                 $nextNumber = intval($matches[1]) + 1;
             }
