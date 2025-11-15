@@ -433,6 +433,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
 <body>
     <div class="dashboard-container">
@@ -496,12 +497,12 @@
                     <table id="ipTable">
                         <thead>
                             <tr>
-                                <th>IP Address</th>
-                                <th>Location</th>
-                                <th>Visits</th>
+                                <th>Network ID</th>
+                                <th>Email Used</th>
                                 <th>Attempts</th>
                                 <th>Success</th>
                                 <th>Last Seen</th>
+                                <th>Location</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -829,19 +830,67 @@
                 `;
                 return;
             }
+            
+            // Function to view location on map
+            window.viewLocation = function(lat, lng, ip, emails) {
+                // Create a popup with map
+                const popupContent = `
+                    <div style="width: 500px; height: 400px;">
+                        <h3 style="margin-bottom: 10px; color: #2d3748;">Location Details</h3>
+                        <p><strong>Network ID:</strong> ${ip}</p>
+                        <p><strong>Email:</strong> ${emails}</p>
+                        <p><strong>Coordinates:</strong> ${lat.toFixed(6)}, ${lng.toFixed(6)}</p>
+                        <div id="locationMap" style="width: 100%; height: 300px; margin-top: 15px; border-radius: 8px; border: 1px solid #e2e8f0;"></div>
+                    </div>
+                `;
+                
+                Swal.fire({
+                    html: popupContent,
+                    width: '550px',
+                    showConfirmButton: true,
+                    confirmButtonText: 'Close',
+                    confirmButtonColor: '#667eea',
+                    didOpen: () => {
+                        // Initialize map in the popup
+                        const locationMap = L.map('locationMap').setView([lat, lng], 13);
+                        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                            maxZoom: 19,
+                            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                        }).addTo(locationMap);
+                        
+                        // Add marker
+                        L.marker([lat, lng], {
+                            icon: L.divIcon({
+                                className: 'custom-marker',
+                                html: `<div style="background-color: #e53e3e; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 10px rgba(0,0,0,0.3);"></div>`,
+                                iconSize: [20, 20],
+                                iconAnchor: [10, 10]
+                            })
+                        }).addTo(locationMap).bindPopup(`<strong>${ip}</strong><br>${emails}`);
+                    }
+                });
+            };
 
             ips.forEach((row, index) => {
                 try {
                     const tr = document.createElement('tr');
-                    const location = row.city && row.country ? `${row.city}, ${row.country}` : 'Unknown';
+                    const emails = row.emails_used && row.emails_used.length > 0 
+                        ? row.emails_used.join(', ') 
+                        : 'N/A';
+                    const hasLocation = row.latitude && row.longitude;
+                    const locationBtn = hasLocation 
+                        ? `<button class="action-btn" style="background: #4299e1; padding: 6px 12px; border-radius: 6px; color: white; border: none; cursor: pointer; font-size: 0.85rem;" onclick="viewLocation(${row.latitude}, ${row.longitude}, '${row.ip}', '${emails.replace(/'/g, "\\'")}')">
+                            <i class="fas fa-map-marker-alt"></i> View Location
+                           </button>`
+                        : '<span style="color: #999;">No location data</span>';
                     
                     tr.innerHTML = `
                         <td class="ip-address">${row.ip || 'Unknown'}</td>
-                        <td>${location}</td>
-                        <td><span class="badge badge-info">${row.visits || 0}</span></td>
+                        <td>${emails}</td>
                         <td><span class="badge badge-warning">${row.login_attempts || 0}</span></td>
                         <td><span class="badge badge-success">${row.login_success || 0}</span></td>
                         <td>${row.last_seen || 'Never'}</td>
+                        <td>${locationBtn}</td>
                     `;
                     tbody.appendChild(tr);
                 } catch (error) {

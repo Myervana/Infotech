@@ -460,6 +460,27 @@ if (!headers_sent()) {
             justify-content: center;
         }
 
+        /* Login OTP Modal (2FA) */
+        #loginOTPModal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 10040;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .login-otp-modal-content {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            width: 90%;
+            max-width: 450px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            position: relative;
+        }
+
         .reset-modal-content {
             background: white;
             border-radius: 15px;
@@ -782,41 +803,186 @@ if (!headers_sent()) {
                 if(loginForm){
                     // reCAPTCHA v3 verification before submitting to backend
                     let recaptchaPassed = false;
-                    loginForm.addEventListener('submit', function(e){
+                    loginForm.addEventListener('submit', async function(e){
+                        e.preventDefault(); e.stopPropagation();
+                        
+                        if(isLocked()){
+                            disableAllButtons(); startTimer(); return false;
+                        }
+                        recordAttempt();
+                        
                         if (!recaptchaPassed) {
-                            e.preventDefault(); e.stopPropagation();
-                            
-                            // Execute reCAPTCHA v3
-                            executeRecaptcha().then(function(token) {
+                            try {
+                                const token = await executeRecaptcha();
                                 recaptchaPassed = true;
-                                // add hidden field to signal reCAPTCHA ok and include token
-                                let h = loginForm.querySelector('input[name="recaptcha_ok"]');
-                                if(!h){ h = document.createElement('input'); h.type='hidden'; h.name='recaptcha_ok'; loginForm.appendChild(h); }
-                                h.value = '1';
                                 
-                                let tokenField = loginForm.querySelector('input[name="recaptcha_token"]');
-                                if(!tokenField){ tokenField = document.createElement('input'); tokenField.type='hidden'; tokenField.name='recaptcha_token'; loginForm.appendChild(tokenField); }
-                                tokenField.value = token;
+                                // Get form data
+                                const email = loginForm.querySelector('input[name="email"]').value;
+                                const password = loginForm.querySelector('input[name="password"]').value;
                                 
-                                loginForm.submit();
-                            }).catch(function(error) {
-                                console.error('reCAPTCHA execution failed:', error);
+                                if(!email || !password) {
                                 (window.queueSwal || Swal.fire)({
-                                    icon: 'error',
-                                    title: 'Verification Failed',
-                                    text: 'Unable to verify your request. Please try again.',
-                                    confirmButtonColor: '#dc3545',
-                                    zIndex: 10001,
-                                    allowOutsideClick: false,
-                                    allowEscapeKey: false
-                                });
+                                        icon: 'warning',
+                                        title: 'Missing Fields',
+                                        text: 'Enter email and password',
+                                        confirmButtonColor: '#ffc107',
+                                        zIndex: 10001
                             });
                             return false;
+                                }
+                                
+                                // Disable submit button
+                const submitBtn = loginForm.querySelector('button[type="submit"]');
+                if(submitBtn) {
+                    submitBtn.disabled = true;
+                                    submitBtn.textContent = 'Logging in...';
+                                }
+                                
+                                // Immediately show OTP modal for faster UX
+                                window.loginAttemptsRemaining = 3;
+                                if(window.openLoginOTPModal) {
+                                    window.openLoginOTPModal(email);
+                                } else {
+                                    console.error('openLoginOTPModal function not found');
+                                }
+                                
+                                // Show subtle info
+                                Swal.fire({
+                                    icon: 'info',
+                                    title: 'Check Your Email',
+                                    text: 'We are sending your OTP...',
+                                    timer: 1200,
+                                    showConfirmButton: false,
+                                    zIndex: 10001
+                                });
+                                
+                                // Send request in background
+                    const formData = new FormData();
+                    formData.append('email', email);
+                    formData.append('password', password);
+                    formData.append('_token', getCSRFToken());
+                        formData.append('recaptcha_ok', '1');
+                                formData.append('recaptcha_token', token);
+                    
+                    const response = await fetch('/login', {
+                        method: 'POST',
+                        body: formData,
+                        credentials: 'same-origin',
+                        headers: {
+                            'Accept': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest'
                         }
-                        return true;
+                    });
+                    
+                    let data = {};
+                    const contentType = response.headers.get('content-type');
+                    if (contentType && contentType.includes('application/json')) {
+                        data = await response.json().catch(() => ({}));
+                    } else {
+                        const text = await response.text().catch(() => '');
+                        try {
+                            data = JSON.parse(text);
+                        } catch(e) {
+                            console.error('Failed to parse response:', text);
+                        }
+                    }
+                    
+                    console.log('Login response:', response.status, data);
+                    
+                    if(response.ok && data.requires_otp){
+                        // 2FA required - show modal with OTP input
+                        window.loginOtpToken = data.token || '';
+                        window.loginOtpEmail = email;
+                        console.log('2FA required, opening modal. Token:', window.loginOtpToken);
+                        
+                        // Ensure modal is visible and properly configured
+                        const m = document.getElementById('loginOTPModal');
+                        if(m) {
+                            // Update email in modal
+                            const emailSpan = document.getElementById('loginOtpEmail');
+                            if(emailSpan) {
+                                emailSpan.textContent = email;
+                            }
+                            
+                            // Clear any previous errors
+                            const errorEl = document.getElementById('loginOtpError');
+                            if(errorEl) {
+                                errorEl.textContent = '';
+                            }
+                            
+                            // Show modal
+                            m.style.display = 'flex';
+                            m.style.setProperty('display', 'flex', 'important');
+                            m.style.setProperty('visibility', 'visible', 'important');
+                            m.style.setProperty('opacity', '1', 'important');
+                            m.style.setProperty('z-index', '10040', 'important');
+                            
+                            // Focus first OTP input
+                            const firstInput = m.querySelector('.login-otp-digit');
+                            if(firstInput) {
+                                setTimeout(() => firstInput.focus(), 100);
+                            }
+                            
+                            // Start timer if function exists
+                            if(window.startLoginOtpTimer) {
+                                window.startLoginOtpTimer();
+                            }
+                        } else {
+                            console.error('loginOTPModal element not found!');
+                            // Fallback: show error if modal doesn't exist
+                            (window.queueSwal || Swal.fire)({
+                                icon: 'error',
+                                title: 'Error',
+                                text: 'Unable to display OTP modal. Please refresh the page.',
+                                confirmButtonColor: '#dc3545',
+                                zIndex: 10001
+                            });
+                        }
+                        
+                        // Re-enable submit button in case user needs to try again
+                        if(submitBtn) {
+                            submitBtn.disabled = false;
+                            submitBtn.textContent = 'Log In';
+                        }
+                    } else if(response.ok && data.redirect){
+                        // Direct redirect (no 2FA required) - close modal first
+                        if(window.closeLoginOTPModal) window.closeLoginOTPModal(true);
+                        window.location.href = data.redirect;
+                    } else {
+                        // Login failed - close modal and show error
+                        if(window.closeLoginOTPModal) window.closeLoginOTPModal(true);
+                        (window.queueSwal || Swal.fire)({
+                            icon: 'error',
+                            title: 'Login Failed',
+                            text: data.message || 'Invalid credentials',
+                            confirmButtonColor: '#dc3545',
+                            zIndex: 10001
+                        });
+                        if(submitBtn) {
+                            submitBtn.disabled = false;
+                            submitBtn.textContent = 'Log In';
+                        }
+                    }
+                } catch(error) {
+                    console.error('Login error:', error);
+                    if(window.closeLoginOTPModal) window.closeLoginOTPModal(true);
+                    (window.queueSwal || Swal.fire)({
+                        icon: 'error',
+                        title: 'Error',
+                        text: 'An error occurred. Please try again.',
+                        confirmButtonColor: '#dc3545',
+                        zIndex: 10001
+                    });
+                                const submitBtn = loginForm.querySelector('button[type="submit"]');
+                    if(submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = 'Log In';
+                    }
+                }
+                            return false;
+                        }
+                        return false;
                     }, {capture:true});
-                    // still guard for lockout
-                    loginForm.addEventListener('submit', guardSubmit, {capture:true});
                 }
                 if(isLocked()){ disableAllButtons(); startTimer(); }
             }
@@ -1001,6 +1167,173 @@ if (!headers_sent()) {
                     }
                 });
             }
+        })();
+    </script>
+    <script>
+        // Login OTP Modal Logic (2FA) - 1 minute timer
+        (function(){
+            let loginOtpTimer = null;
+            window.loginOtpToken = '';
+            window.loginOtpEmail = '';
+            window.loginAttemptsRemaining = 3;
+            
+            function clearLoginOtpTimer(){ if(loginOtpTimer){ clearInterval(loginOtpTimer); loginOtpTimer=null; } }
+            window.startLoginOtpTimer = function(){
+                let t = 60; // 1 minute (60 seconds)
+                const timerEl = document.getElementById('loginOtpTimer');
+                const countEl = document.getElementById('loginTimerCount');
+                const btn = document.getElementById('loginResendBtn');
+                clearLoginOtpTimer();
+                if(btn) btn.disabled = true;
+                if(timerEl) timerEl.classList.remove('warning');
+                loginOtpTimer = setInterval(()=>{
+                    t--;
+                    if(countEl) countEl.textContent = t;
+                    if(t<=10 && timerEl) timerEl.classList.add('warning');
+                    if(t<=0){
+                        clearLoginOtpTimer();
+                        if(btn) btn.disabled = false;
+                        if(timerEl){
+                            timerEl.textContent = 'OTP expired. Click resend to get a new code.';
+                            timerEl.classList.remove('warning');
+                        }
+                    }
+                },1000);
+            }
+
+            async function postLoginJSON(url, payload){
+                const res = await fetchWithCSRFRetry(url, { method:'POST', body: JSON.stringify(payload) });
+                let data={}; try{ data=await res.json(); }catch(e){}
+                return { ok: res.ok, status: res.status, data };
+            }
+
+            window.openLoginOTPModal = function(email){
+                const m = document.getElementById('loginOTPModal');
+                if(!m) {
+                    console.error('loginOTPModal element not found!');
+                    return;
+                }
+                console.log('Opening login OTP modal for:', email);
+                m.style.display = 'flex';
+                m.style.setProperty('display', 'flex', 'important');
+                m.style.setProperty('visibility', 'visible', 'important');
+                m.style.setProperty('opacity', '1', 'important');
+                m.style.setProperty('z-index', '10040', 'important');
+                if(email) {
+                    const emailSpan = document.getElementById('loginOtpEmail');
+                    if(emailSpan) {
+                        emailSpan.textContent = email;
+                    }
+                    window.loginOtpEmail = email;
+                }
+                // Clear OTP inputs and errors
+                document.querySelectorAll('#loginOTPModal .login-otp-digit').forEach(i=>i.value='');
+                const errorEl = document.getElementById('loginOtpError');
+                if(errorEl) {
+                    errorEl.textContent = '';
+                }
+                const first = document.querySelector('#loginOTPModal .login-otp-digit');
+                if(first) {
+                    setTimeout(() => first.focus(), 100);
+                }
+                if(window.startLoginOtpTimer) {
+                    window.startLoginOtpTimer();
+                }
+            };
+            
+            window.closeLoginOTPModal = function(force = false){
+                if(!force) return; // Prevent accidental closing
+                const m = document.getElementById('loginOTPModal');
+                if(!m) return;
+                    m.style.display = 'none';
+                clearLoginOtpTimer();
+                window.loginOtpToken = '';
+                window.loginOtpEmail = '';
+                document.querySelectorAll('#loginOTPModal .login-otp-digit').forEach(i=>i.value='');
+            };
+            
+            window.resendLoginOTP = async function(){
+                const email = window.loginOtpEmail || document.getElementById('loginOtpEmail')?.textContent||'';
+                const r = await postLoginJSON('/login/resend-otp', { token: window.loginOtpToken, email });
+                if(r.ok){
+                    window.loginOtpToken = r.data.token || window.loginOtpToken;
+                        startLoginOtpTimer();
+                        document.getElementById('loginOtpError').textContent = '';
+                        (window.queueSwal || Swal.fire)({
+                            icon: 'success',
+                            title: 'OTP Resent',
+                            text: 'A new OTP has been sent to your email.',
+                            confirmButtonColor: '#28a745',
+                            timer: 2000,
+                            zIndex: 10001
+                        });
+                    } else {
+                    document.getElementById('loginOtpError').textContent = r.data?.message || 'Failed to resend OTP';
+                }
+            };
+            
+            window.verifyLoginOTP = async function(){
+                const code = Array.from(document.querySelectorAll('#loginOTPModal .login-otp-digit')).map(i=>i.value).join('');
+                if(code.length!==6){
+                    (window.queueSwal || Swal.fire)({
+                        icon: 'warning',
+                        title: 'Incomplete OTP',
+                        text: 'Enter 6-digit OTP',
+                        confirmButtonColor: '#ffc107',
+                        zIndex: 10001
+                    });
+                    return;
+                }
+                const r = await postLoginJSON('/login/verify-otp', { token: window.loginOtpToken, otp: code, email: window.loginOtpEmail });
+                if(r.ok){
+                    // Close modal and redirect to dashboard
+                    if(window.closeLoginOTPModal) window.closeLoginOTPModal(true);
+                    window.location.href = r.data?.redirect || '/dashboard';
+                    } else {
+                    window.loginAttemptsRemaining = (r.data && r.data.remaining_attempts!==undefined) ? r.data.remaining_attempts : (window.loginAttemptsRemaining-1);
+                    if(window.loginAttemptsRemaining <= 0){
+                        if(window.closeLoginOTPModal) window.closeLoginOTPModal(true);
+                        (window.queueSwal || Swal.fire)({
+                            icon: 'error',
+                            title: 'Locked',
+                            text: 'Too many invalid OTP attempts. Please try again later.',
+                            confirmButtonColor: '#dc3545',
+                            zIndex: 10001
+                        });
+                        return;
+                    }
+                    document.getElementById('loginOtpError').textContent = r.data?.message || `Invalid OTP. Attempts left: ${window.loginAttemptsRemaining}`;
+                    document.querySelectorAll('#loginOTPModal .login-otp-digit').forEach(i=>i.value='');
+                    const first = document.querySelector('#loginOTPModal .login-otp-digit');
+                    if(first) first.focus();
+                }
+            };
+            
+            // OTP input navigation
+            document.addEventListener('DOMContentLoaded', function(){
+                const inputs = document.querySelectorAll('#loginOTPModal .login-otp-digit');
+                inputs.forEach((input, idx)=>{
+                    input.addEventListener('input', function(){
+                        if(this.value && idx<inputs.length-1){
+                            inputs[idx+1].focus();
+                        }
+                    });
+                    input.addEventListener('keydown', function(e){
+                        if(e.key==='Backspace' && !this.value && idx>0){
+                            inputs[idx-1].focus();
+                        }
+                    });
+                    input.addEventListener('paste', function(e){
+                        e.preventDefault();
+                        const paste = (e.clipboardData || window.clipboardData).getData('text');
+                        const digits = paste.replace(/\D/g, '').slice(0, 6);
+                        digits.split('').forEach((digit, i) => {
+                            if(inputs[i]) inputs[i].value = digit;
+                        });
+                        if(digits.length === 6) inputs[5].focus();
+                    });
+                });
+            });
         })();
     </script>
     <script>
@@ -1673,6 +2006,35 @@ if (!headers_sent()) {
         </div>
     </div>
 
+    <!-- Login OTP Modal (2FA) - Only shows OTP verification -->
+    <div id="loginOTPModal" style="display: none;">
+        <div class="login-otp-modal-content">
+            <button class="modal-close" onclick="closeLoginOTPModal(true)">&times;</button>
+
+            <!-- OTP Verification -->
+            <div class="reset-header">
+                <h3>Two-Factor Authentication</h3>
+                <p>Enter the 6-digit code sent to <span id="loginOtpEmail"></span></p>
+            </div>
+            <div class="otp-input">
+                <input type="text" maxlength="1" class="login-otp-digit" data-index="0" pattern="[0-9]" inputmode="numeric" autocomplete="off" />
+                <input type="text" maxlength="1" class="login-otp-digit" data-index="1" pattern="[0-9]" inputmode="numeric" autocomplete="off" />
+                <input type="text" maxlength="1" class="login-otp-digit" data-index="2" pattern="[0-9]" inputmode="numeric" autocomplete="off" />
+                <input type="text" maxlength="1" class="login-otp-digit" data-index="3" pattern="[0-9]" inputmode="numeric" autocomplete="off" />
+                <input type="text" maxlength="1" class="login-otp-digit" data-index="4" pattern="[0-9]" inputmode="numeric" autocomplete="off" />
+                <input type="text" maxlength="1" class="login-otp-digit" data-index="5" pattern="[0-9]" inputmode="numeric" autocomplete="off" />
+            </div>
+            <div class="otp-timer" id="loginOtpTimer">Resend OTP in <span id="loginTimerCount">60</span>s</div>
+            <div style="text-align:center; margin: 16px 0;">
+                <button type="button" onclick="verifyLoginOTP()" class="submit-btn">Verify OTP</button>
+            </div>
+            <div style="text-align:center;">
+                <button type="button" id="loginResendBtn" class="resend-btn" onclick="resendLoginOTP()" disabled>Resend OTP</button>
+            </div>
+            <div id="loginOtpError" style="text-align:center; color:#dc3545; margin-top:10px; font-size:14px;"></div>
+        </div>
+    </div>
+
     <!-- Super Admin Modal -->
     <div id="superAdminModal">
         <div class="sa-modal-content">
@@ -1849,6 +2211,38 @@ if (!headers_sent()) {
                     </div>
                     <button type="button" onclick="updatePassword()" class="submit-btn">Update Password</button>
                 </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Login OTP Modal (2FA) -->
+    <div id="loginOTPModal" style="display: none;">
+        <div class="login-otp-modal-content">
+            <button class="modal-close" onclick="window.closeLoginOTPModal(true)">&times;</button>
+            
+            <div class="reset-header">
+                <h3>Two-Factor Authentication</h3>
+                <p>Enter the 6-digit code sent to <span id="loginOtpEmail"></span></p>
+            </div>
+            
+            <div class="otp-input">
+                <input type="text" maxlength="1" class="login-otp-digit" data-index="0" />
+                <input type="text" maxlength="1" class="login-otp-digit" data-index="1" />
+                <input type="text" maxlength="1" class="login-otp-digit" data-index="2" />
+                <input type="text" maxlength="1" class="login-otp-digit" data-index="3" />
+                <input type="text" maxlength="1" class="login-otp-digit" data-index="4" />
+                <input type="text" maxlength="1" class="login-otp-digit" data-index="5" />
+            </div>
+            
+            <div class="otp-timer" id="loginOtpTimer">Resend OTP in <span id="loginTimerCount">60</span>s</div>
+            <div id="loginOtpError" style="text-align:center; color:#dc3545; font-weight:bold; margin-top:8px; min-height:20px;"></div>
+            
+            <div style="text-align: center; margin: 20px 0;">
+                <button type="button" onclick="window.verifyLoginOTP()" class="submit-btn">Verify OTP</button>
+            </div>
+            
+            <div style="text-align: center;">
+                <button type="button" id="loginResendBtn" class="resend-btn" onclick="window.resendLoginOTP()" disabled>Resend OTP</button>
             </div>
         </div>
     </div>

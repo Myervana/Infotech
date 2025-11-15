@@ -31,6 +31,8 @@ Route::get('/register', [AuthController::class, 'showRegisterForm']);
 Route::post('/register', [AuthController::class, 'register']);
 Route::get('/login', [AuthController::class, 'showLoginForm'])->name('login');
 Route::post('/login', [AuthController::class, 'login']);
+Route::post('/login/verify-otp', [AuthController::class, 'verifyLoginOTP'])->name('login.verify-otp');
+Route::post('/login/resend-otp', [AuthController::class, 'resendLoginOTP'])->name('login.resend-otp');
 // Access token activation during signup
 Route::post('/access-token/resend', [AuthController::class, 'resendAccessToken'])->name('access-token.resend');
 Route::post('/access-token/verify', [AuthController::class, 'verifyAccessToken'])->name('access-token.verify');

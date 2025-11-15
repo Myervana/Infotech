@@ -48,42 +48,105 @@ class IpTracking extends Model
             ];
         }
 
-        // Try multiple geolocation services for better accuracy
+        // Try multiple geolocation services for better accuracy (ordered by reliability)
         $services = [
-            'ipapi' => "https://ipapi.co/{$ip}/json/",
-            'ipinfo' => "https://ipinfo.io/{$ip}/json",
-            'ipgeolocation' => "https://api.ipgeolocation.io/ipgeo?apiKey=free&ip={$ip}",
+            'ipapi' => [
+                'url' => "https://ipapi.co/{$ip}/json/",
+                'priority' => 1
+            ],
+            'ip-api' => [
+                'url' => "http://ip-api.com/json/{$ip}?fields=status,message,country,countryCode,region,regionName,city,lat,lon,timezone,query",
+                'priority' => 2
+            ],
+            'ipinfo' => [
+                'url' => "https://ipinfo.io/{$ip}/json",
+                'priority' => 3
+            ],
+            'ipgeolocation' => [
+                'url' => "https://api.ipgeolocation.io/ipgeo?apiKey=free&ip={$ip}",
+                'priority' => 4
+            ],
+            'geojs' => [
+                'url' => "https://get.geojs.io/v1/ip/geo/{$ip}.json",
+                'priority' => 5
+            ],
         ];
 
         $bestResult = null;
         $maxAccuracy = 0;
+        $results = [];
 
-        foreach ($services as $service => $url) {
+        // Try all services in parallel for faster response
+        foreach ($services as $service => $config) {
             try {
                 $context = stream_context_create([
                     'http' => [
-                        'timeout' => 3, // 3 second timeout per service
+                        'timeout' => 5, // Increased timeout for better reliability
                         'method' => 'GET',
-                        'header' => 'User-Agent: IT-Inventory-System/1.0'
+                        'header' => 'User-Agent: IT-Inventory-System/1.0',
+                        'ignore_errors' => true
                     ]
                 ]);
                 
-                $response = file_get_contents($url, false, $context);
+                $response = @file_get_contents($config['url'], false, $context);
                 
                 if ($response === false) continue;
                 
                 $data = json_decode($response, true);
                 
-                if ($data && !isset($data['error'])) {
+                if ($data && !isset($data['error']) && !isset($data['message'])) {
                     $result = self::parseLocationData($data, $service);
-                    if ($result && $result['accuracy'] > $maxAccuracy) {
-                        $bestResult = $result;
-                        $maxAccuracy = $result['accuracy'];
+                    if ($result && isset($result['latitude']) && isset($result['longitude'])) {
+                        $results[] = $result;
+                        // Use the result with highest accuracy
+                        if ($result['accuracy'] > $maxAccuracy) {
+                            $bestResult = $result;
+                            $maxAccuracy = $result['accuracy'];
+                        }
                     }
                 }
             } catch (\Exception $e) {
                 \Log::warning("Geolocation service {$service} failed for IP {$ip}: " . $e->getMessage());
                 continue;
+            }
+        }
+
+        // If we have multiple results, calculate average for better accuracy
+        if (count($results) > 1) {
+            $validResults = array_filter($results, function($r) {
+                return isset($r['latitude']) && isset($r['longitude']) && 
+                       $r['latitude'] != 0 && $r['longitude'] != 0;
+            });
+            
+            if (count($validResults) > 1) {
+                $avgLat = array_sum(array_column($validResults, 'latitude')) / count($validResults);
+                $avgLng = array_sum(array_column($validResults, 'longitude')) / count($validResults);
+                
+                // Use the most common city/country
+                $cities = array_filter(array_column($validResults, 'city'));
+                $countries = array_filter(array_column($validResults, 'country'));
+                
+                $mostCommonCity = null;
+                if (!empty($cities)) {
+                    $cityCounts = array_count_values($cities);
+                    $mostCommonCity = array_search(max($cityCounts), $cityCounts);
+                }
+                
+                $mostCommonCountry = null;
+                if (!empty($countries)) {
+                    $countryCounts = array_count_values($countries);
+                    $mostCommonCountry = array_search(max($countryCounts), $countryCounts);
+                }
+                
+                $bestResult = [
+                    'latitude' => round($avgLat, 6),
+                    'longitude' => round($avgLng, 6),
+                    'city' => $mostCommonCity ?: ($bestResult['city'] ?? null),
+                    'country' => $mostCommonCountry ?: ($bestResult['country'] ?? null),
+                    'region' => $bestResult['region'] ?? null,
+                    'timezone' => $bestResult['timezone'] ?? null,
+                    'accuracy' => min(95, $maxAccuracy + 5), // Boost accuracy when multiple services agree
+                ];
             }
         }
 
@@ -120,10 +183,24 @@ class IpTracking extends Model
                         'latitude' => (float)$data['latitude'],
                         'longitude' => (float)$data['longitude'],
                         'city' => $data['city'] ?? null,
-                        'country' => $data['country_name'] ?? null,
-                        'region' => $data['region'] ?? null,
+                        'country' => $data['country_name'] ?? $data['country'] ?? null,
+                        'region' => $data['region'] ?? $data['region_code'] ?? null,
                         'timezone' => $data['timezone'] ?? null,
-                        'accuracy' => 85, // High accuracy for ipapi
+                        'accuracy' => 88, // High accuracy for ipapi
+                    ];
+                }
+                break;
+
+            case 'ip-api':
+                if (isset($data['lat'], $data['lon']) && $data['status'] === 'success') {
+                    $result = [
+                        'latitude' => (float)$data['lat'],
+                        'longitude' => (float)$data['lon'],
+                        'city' => $data['city'] ?? null,
+                        'country' => $data['country'] ?? null,
+                        'region' => $data['regionName'] ?? $data['region'] ?? null,
+                        'timezone' => $data['timezone'] ?? null,
+                        'accuracy' => 90, // Very high accuracy for ip-api
                     ];
                 }
                 break;
@@ -139,7 +216,7 @@ class IpTracking extends Model
                             'country' => $data['country'] ?? null,
                             'region' => $data['region'] ?? null,
                             'timezone' => $data['timezone'] ?? null,
-                            'accuracy' => 80, // Good accuracy for ipinfo
+                            'accuracy' => 85, // Good accuracy for ipinfo
                         ];
                     }
                 }
@@ -151,10 +228,24 @@ class IpTracking extends Model
                         'latitude' => (float)$data['latitude'],
                         'longitude' => (float)$data['longitude'],
                         'city' => $data['city'] ?? null,
-                        'country' => $data['country_name'] ?? null,
-                        'region' => $data['state_prov'] ?? null,
-                        'timezone' => $data['time_zone']['name'] ?? null,
-                        'accuracy' => 90, // Very high accuracy for ipgeolocation
+                        'country' => $data['country_name'] ?? $data['country'] ?? null,
+                        'region' => $data['state_prov'] ?? $data['region'] ?? null,
+                        'timezone' => isset($data['time_zone']) ? ($data['time_zone']['name'] ?? $data['time_zone']) : null,
+                        'accuracy' => 92, // Very high accuracy for ipgeolocation
+                    ];
+                }
+                break;
+
+            case 'geojs':
+                if (isset($data['latitude'], $data['longitude'])) {
+                    $result = [
+                        'latitude' => (float)$data['latitude'],
+                        'longitude' => (float)$data['longitude'],
+                        'city' => $data['city'] ?? null,
+                        'country' => $data['country'] ?? null,
+                        'region' => $data['region'] ?? null,
+                        'timezone' => $data['timezone'] ?? null,
+                        'accuracy' => 82, // Good accuracy for geojs
                     ];
                 }
                 break;

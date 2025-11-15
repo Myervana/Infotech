@@ -129,102 +129,183 @@ class AuthController extends Controller
             
             if (!$user->is_approved) {
                 Auth::logout();
-                return back()->withErrors(['email' => 'Your account is not yet activated. Please enter the Access Token sent to your Gmail.']).with([
-                    'access_token_email' => $request->email,
-                    'show_access_token_modal' => true,
-                ]);
+                return response()->json(['message' => 'Your account is not yet activated. Please enter the Access Token sent to your Gmail.'], 403);
             }
 
-            // FIRST: Check if account was registered on this device (has primary device binding)
-            // If account is registered/binded to this device, allow login immediately - NO ERROR MESSAGE
-            // Check with both active and inactive primary bindings
-            $primaryBinding = DeviceBinding::where('user_id', $user->id)
-                ->where('is_primary', true)
-                ->orderBy('created_at', 'asc') // Get the oldest one (original registration)
-                ->first();
+            // Generate OTP for 2FA
+            $otp = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+            $token = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
             
-            $deviceBinding = null;
-            $deviceFingerprint = $this->generateDeviceFingerprint($request);
-            $userAgent = $request->userAgent() ?? '';
-            $ipAddress = $request->ip();
-            
-            // If account has a primary device binding (registered on a device), allow login immediately
-            // This means the account was created on a device, so it can always login from that device
-            if ($primaryBinding) {
-                // Reactivate if it was deactivated
-                if (!$primaryBinding->is_active) {
-                    $primaryBinding->is_active = true;
-                    $primaryBinding->save();
-                }
-                
-                // Use the primary binding and update it with current device info
-                $deviceBinding = $primaryBinding;
-                $deviceBinding->update([
-                    'device_fingerprint' => $deviceFingerprint,
-                    'user_agent' => $userAgent,
-                    'ip_address' => $ipAddress,
-                    'device_name' => $this->getDeviceName($request),
-                    'last_accessed_at' => now()
-                ]);
-                
-                Log::info('Login SUCCESS - Account registered on device (Primary device binding found)', [
-                    'user_id' => $user->id,
-                    'email' => $user->email,
-                    'primary_binding_id' => $primaryBinding->id,
-                    'device_fingerprint' => $deviceFingerprint
-                ]);
-                
-                // Continue to login - DO NOT show error message
-                // The account is registered on this device, so login is allowed
-            } else {
-                // No primary binding found - this could mean:
-                // 1. Account was created before device binding was implemented
-                // 2. Primary binding was deleted
-                // 3. Account is trying to login from device where it was created
-                // 
-                // SOLUTION: Create a primary device binding automatically
-                // This allows accounts created on this device to login
-                Log::info('No primary binding found - Creating primary device binding for account', [
-                    'user_id' => $user->id,
-                    'email' => $user->email
-                ]);
-                
-                // Create primary device binding - this account is now bound to this device
-                $primaryBinding = DeviceBinding::create([
-                    'user_id' => $user->id,
-                    'device_fingerprint' => $deviceFingerprint,
-                    'device_name' => $this->getDeviceName($request),
-                    'user_agent' => $userAgent,
-                    'ip_address' => $ipAddress,
-                    'is_primary' => true,
-                    'is_active' => true,
-                    'last_accessed_at' => now(),
-                ]);
-                
-                $deviceBinding = $primaryBinding;
-                
-                Log::info('Primary device binding created - Login allowed', [
-                    'user_id' => $user->id,
-                    'email' => $user->email,
-                    'primary_binding_id' => $primaryBinding->id
-                ]);
-                
-                // Continue to login - DO NOT show error message
-                // The account is now bound to this device
-            }
-            
-            // Log successful login (don't let this block login if it fails)
+            // Store OTP in session with token
+            session([
+                'login_otp_token' => $token,
+                'login_otp_email' => $request->email,
+                'login_otp_code' => $otp,
+                'login_otp_expires' => now()->addMinutes(5),
+                'login_otp_attempts' => 0,
+                'login_user_id' => $user->id,
+            ]);
+
+            // Send OTP via email
             try {
-                IpTracking::logEvent($ip, 'login_success', $request->email, true, $userAgent);
+                Mail::send('emails.login_otp', ['otp' => $otp, 'user' => $user], function ($message) use ($user) {
+                    $message->from('iitech.inventory@gmail.com', 'IT Inventory System')
+                            ->to($user->email)
+                            ->subject('Your Login OTP - IT Inventory System');
+                });
             } catch (\Exception $e) {
-                Log::error('Failed to log successful login: ' . $e->getMessage());
+                Log::error('Failed to send login OTP: ' . $e->getMessage());
+                Auth::logout();
+                return response()->json(['message' => 'Failed to send OTP. Please try again.'], 500);
             }
 
-            $request->session()->regenerate();
-            return redirect()->intended('/dashboard');
+            Auth::logout(); // Logout until OTP is verified
+
+            // Always return JSON response for login endpoint (since we're using AJAX)
+            return response()->json([
+                'requires_otp' => true,
+                'token' => $token,
+                'message' => 'OTP sent to your email'
+            ]);
         }
 
-        return back()->withErrors(['email' => 'Invalid credentials']);
+        // Invalid credentials - return JSON
+        return response()->json(['message' => 'Invalid credentials'], 401);
+    }
+
+    public function verifyLoginOTP(Request $request) {
+        $request->validate([
+            'email' => 'required|email',
+            'token' => 'required|string',
+            'otp' => 'required|digits:6',
+        ]);
+
+        $storedToken = session('login_otp_token');
+        $storedEmail = session('login_otp_email');
+        $storedOTP = session('login_otp_code');
+        $expires = session('login_otp_expires');
+        $attempts = (int) session('login_otp_attempts', 0);
+        $userId = session('login_user_id');
+
+        if (!$storedToken || !$storedOTP || !$expires || now()->gt($expires) || 
+            !$storedEmail || $storedEmail !== $request->email || 
+            $storedToken !== $request->token || !$userId) {
+            return response()->json(['message' => 'OTP expired or invalid session'], 400);
+        }
+
+        if ($storedOTP !== $request->otp) {
+            $attempts++;
+            session(['login_otp_attempts' => $attempts]);
+            if ($attempts >= 3) {
+                session()->forget(['login_otp_token', 'login_otp_email', 'login_otp_code', 'login_otp_expires', 'login_otp_attempts', 'login_user_id']);
+                return response()->json([
+                    'message' => 'Too many invalid attempts. Please login again.',
+                ], 429);
+            }
+            return response()->json(['message' => 'Invalid OTP', 'remaining_attempts' => max(0, 3 - $attempts)], 400);
+        }
+
+        // OTP verified - login the user
+        $user = User::find($userId);
+        if (!$user) {
+            return response()->json(['message' => 'User not found'], 404);
+        }
+
+        Auth::login($user);
+        $request->session()->regenerate();
+
+        // Log successful login with location tracking
+        $ip = $request->ip();
+        $userAgent = $request->userAgent();
+        try {
+            IpTracking::logEvent($ip, 'login_success', $user->email, true, $userAgent);
+        } catch (\Exception $e) {
+            Log::error('Failed to log successful login: ' . $e->getMessage());
+        }
+
+        // Handle device binding
+        $deviceFingerprint = $this->generateDeviceFingerprint($request);
+        $primaryBinding = DeviceBinding::where('user_id', $user->id)
+            ->where('is_primary', true)
+            ->orderBy('created_at', 'asc')
+            ->first();
+        
+        if ($primaryBinding) {
+            if (!$primaryBinding->is_active) {
+                $primaryBinding->is_active = true;
+            }
+            $primaryBinding->update([
+                'device_fingerprint' => $deviceFingerprint,
+                'user_agent' => $userAgent,
+                'ip_address' => $ip,
+                'device_name' => $this->getDeviceName($request),
+                'last_accessed_at' => now()
+            ]);
+        } else {
+            DeviceBinding::create([
+                'user_id' => $user->id,
+                'device_fingerprint' => $deviceFingerprint,
+                'device_name' => $this->getDeviceName($request),
+                'user_agent' => $userAgent,
+                'ip_address' => $ip,
+                'is_primary' => true,
+                'is_active' => true,
+                'last_accessed_at' => now(),
+            ]);
+        }
+
+        // Clear OTP session
+        session()->forget(['login_otp_token', 'login_otp_email', 'login_otp_code', 'login_otp_expires', 'login_otp_attempts', 'login_user_id']);
+
+        return response()->json([
+            'message' => 'Login successful',
+            'redirect' => url('/dashboard')
+        ]);
+    }
+
+    public function resendLoginOTP(Request $request) {
+        $request->validate([
+            'email' => 'required|email',
+            'token' => 'required|string',
+        ]);
+
+        $storedToken = session('login_otp_token');
+        $storedEmail = session('login_otp_email');
+        $userId = session('login_user_id');
+
+        if (!$storedToken || $storedToken !== $request->token || 
+            !$storedEmail || $storedEmail !== $request->email || !$userId) {
+            return response()->json(['message' => 'Invalid session'], 400);
+        }
+
+        $user = User::find($userId);
+        if (!$user) {
+            return response()->json(['message' => 'User not found'], 404);
+        }
+
+        // Generate new OTP
+        $otp = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        session([
+            'login_otp_code' => $otp,
+            'login_otp_expires' => now()->addMinutes(5),
+            'login_otp_attempts' => 0,
+        ]);
+
+        try {
+            Mail::send('emails.login_otp', ['otp' => $otp, 'user' => $user], function ($message) use ($user) {
+                $message->from('iitech.inventory@gmail.com', 'IT Inventory System')
+                        ->to($user->email)
+                        ->subject('Your Login OTP - IT Inventory System');
+            });
+        } catch (\Exception $e) {
+            Log::error('Failed to resend login OTP: ' . $e->getMessage());
+            return response()->json(['message' => 'Failed to send OTP. Please try again.'], 500);
+        }
+
+        return response()->json([
+            'message' => 'OTP resent successfully',
+            'token' => $storedToken
+        ]);
     }
 
     /**
