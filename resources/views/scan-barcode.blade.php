@@ -7,11 +7,11 @@
 /* New style for the page title */
     .page-title {
         text-align: center;
-        font-size: 36px; /* Larger font size for a main title */
-        color: #2c3e50; /* A darker, more prominent color */
-        margin-bottom: 40px; /* More space below the title */
-        font-weight: 700; /* Bolder */
-        text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.05); /* Subtle shadow */
+        font-size: 36px;
+        color: #2c3e50;
+        margin-bottom: 40px;
+        font-weight: 700;
+        text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.05);
     }
 
     .scan-container {
@@ -23,12 +23,8 @@
         box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
     }
 
-    .scan-container h2 { /* This rule can now be removed if not needed for inner headings */
-        /* text-align: center; */
-        /* margin-bottom: 30px; */
-        /* font-size: 28px; */
-        /* color: #343a40; */
-        display: none; /* Hide the old H2 inside scan-container */
+    .scan-container h2 {
+        display: none;
     }
 
     .form-group {
@@ -52,7 +48,6 @@
         box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.1);
     }
 
-    /* Scanner input indicator */
     input[type="text"].scanner-input {
         border-color: #28a745;
         box-shadow: 0 0 0 3px rgba(40, 167, 69, 0.1);
@@ -73,39 +68,130 @@
         background: #0b5ed7;
     }
 
-    .result h3 {
-        margin-bottom: 20px;
-        font-size: 20px;
-        color: #495057;
+    /* Modal Styles */
+    .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.6);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        animation: fadeIn 0.3s ease;
     }
-/* Exit button styling */
+
+    .modal-overlay.active {
+        display: flex;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+
+    @keyframes slideUp {
+        from {
+            opacity: 0;
+            transform: translateY(50px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .modal-container {
+        background: white;
+        border-radius: 16px;
+        max-width: 900px;
+        width: 90%;
+        max-height: 85vh;
+        overflow: hidden;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        animation: slideUp 0.4s ease;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .modal-header {
+        background: linear-gradient(135deg, #0d6efd 0%, #0b5ed7 100%);
+        color: white;
+        padding: 20px 30px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 3px solid #0a58ca;
+    }
+
+    .modal-title {
+        font-size: 24px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .modal-close {
+        background: rgba(255, 255, 255, 0.2);
+        border: none;
+        color: white;
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+        transition: all 0.3s ease;
+    }
+
+    .modal-close:hover {
+        background: rgba(255, 255, 255, 0.3);
+        transform: rotate(90deg);
+    }
+
+    .modal-body {
+        padding: 30px;
+        overflow-y: auto;
+        flex: 1;
+    }
+
+    .modal-footer {
+        padding: 20px 30px;
+        border-top: 1px solid #e9ecef;
+        display: flex;
+        justify-content: center;
+        background: #f8f9fa;
+    }
+
     .exit-button {
         background: #28a745;
-        margin-top: 20px;
-        width: 70%;
-        padding: 15px;
+        padding: 12px 40px;
         font-size: 16px;
         font-weight: 600;
         text-align: center;
-        display: block;
-        text-decoration: none;
         color: white;
         border-radius: 8px;
         transition: background 0.3s ease;
-        margin-left: auto; /* Center the button */
-        margin-right: auto; /* Center the button */
+        border: none;
+        cursor: pointer;
     }
 
     .exit-button:hover {
         background: #218838;
-        text-decoration: none;
-        color: white;
     }
 
-    .exit-button:focus {
-        outline: none;
-        box-shadow: 0 0 0 3px rgba(40, 167, 69, 0.25);
+    .result h3 {
+        margin-bottom: 20px;
+        font-size: 20px;
+        color: #495057;
+        text-align: center;
     }
+
     /* Full Set Container */
     .full-set-container {
         border: 2px solid #0d6efd;
@@ -295,19 +381,10 @@
         font-size: 18px;
         margin-top: 25px;
         font-weight: 500;
-    }
-
-    .back-link {
-        display: block;
-        margin-top: 30px;
-        text-align: center;
-        text-decoration: none;
-        color: #0d6efd;
-        font-weight: 500;
-    }
-
-    .back-link:hover {
-        text-decoration: underline;
+        padding: 30px;
+        background: #fff5f5;
+        border-radius: 8px;
+        border: 2px dashed #dc3545;
     }
 
     .set-summary {
@@ -329,6 +406,7 @@
         gap: 20px;
         font-size: 14px;
         color: #6c757d;
+        flex-wrap: wrap;
     }
 
     .component-count {
@@ -346,7 +424,7 @@
         align-items: flex-start;
     }
 
-    /* Main content area styling to work with the sidebar */
+    /* Main content area styling */
     .main-content {
         flex: 1;
         padding: 30px;
@@ -605,7 +683,7 @@
     max-width: 300px;
 }
 
-/* Original Camera Controls (Hidden when overlay is active) */
+/* Original Camera Controls */
 .camera-controls {
     display: flex;
     justify-content: center;
@@ -726,6 +804,8 @@
     padding: 0 15px;
     color: #666;
     font-weight: bold;
+    position: relative;
+    z-index: 1;
 }
 
 /* Responsive Design */
@@ -748,6 +828,28 @@
         width: 90%;
         height: 150px;
     }
+
+    .modal-container {
+        width: 95%;
+        max-height: 90vh;
+    }
+
+    .modal-body {
+        padding: 20px;
+    }
+
+    .item-box {
+        flex-direction: column;
+    }
+
+    .set-meta {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .full-set-grid {
+        grid-template-columns: 1fr;
+    }
 }
 </style>
 @endpush
@@ -758,8 +860,11 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const barcodeInput = document.querySelector('input[name="barcode"]');
-    const form = document.querySelector('form');
+    const manualForm = document.getElementById('manual-scan-form');
     const scannerStatus = document.querySelector('.scanner-status');
+    const resultModal = document.getElementById('result-modal');
+    const modalClose = document.getElementById('modal-close');
+    const modalExitBtn = document.getElementById('modal-exit');
     
     // Enhanced Camera scanning variables
     const cameraVideo = document.getElementById('camera-video');
@@ -795,9 +900,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Configuration for barcode detection
     const BARCODE_CONFIG = {
-        detectionThreshold: 3,      // Number of consistent detections needed
-        detectionTimeout: 1000,     // Time window for detections
-        processingDelay: 500        // Delay before processing barcode
+        detectionThreshold: 3,
+        detectionTimeout: 1000,
+        processingDelay: 500
     };
     
     // Function to detect if input is from scanner
@@ -843,6 +948,233 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
     }
+
+    // Modal functions
+    function openModal() {
+        resultModal.classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeModal() {
+        resultModal.classList.remove('active');
+        document.body.style.overflow = '';
+        // Clear the barcode input for next scan
+        barcodeInput.value = '';
+        barcodeInput.focus();
+    }
+
+    // Modal event listeners
+    if (modalClose) {
+        modalClose.addEventListener('click', closeModal);
+    }
+
+    if (modalExitBtn) {
+        modalExitBtn.addEventListener('click', closeModal);
+    }
+
+    // Close modal when clicking outside
+    if (resultModal) {
+        resultModal.addEventListener('click', function(e) {
+            if (e.target === resultModal) {
+                closeModal();
+            }
+        });
+    }
+
+    // Close modal with Escape key
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && resultModal.classList.contains('active')) {
+            closeModal();
+        }
+    });
+    
+    // Function to submit form with AJAX
+    function submitManualScan(barcode) {
+        showScannerStatus('Processing barcode...', 'scanning');
+        
+        fetch('{{ route("roomitem.scan.api-search") }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+            },
+            body: JSON.stringify({ barcode: barcode })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                displayManualResults(data.items, data.barcode);
+                openModal();
+                showScannerStatus('Barcode found!', 'active');
+            } else {
+                displayManualNotFound(data.barcode);
+                openModal();
+                showScannerStatus('No item found', 'scanning');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showScannerStatus('Error processing barcode', 'scanning');
+        });
+    }
+
+    // Function to display manual scan results in modal
+    function displayManualResults(items, barcode) {
+        const modalBody = document.getElementById('modal-body-content');
+        let html = `<div class="result"><h3>🔍 Result for Barcode: <code>${barcode}</code></h3>`;
+        
+        // Group items by set ID
+        const fullSets = {};
+        const individualItems = [];
+        
+        items.forEach(item => {
+            const match = item.serial_number.match(/^(PC|Monitor|Keyboard|Mouse|PSU)(\d+)$/i);
+            if (match) {
+                const setId = match[2];
+                if (!fullSets[setId]) {
+                    fullSets[setId] = [];
+                }
+                fullSets[setId].push(item);
+            } else {
+                individualItems.push(item);
+            }
+        });
+        
+        // Display Full Sets
+        Object.entries(fullSets).forEach(([setId, setItems]) => {
+            const paddedSetId = setId.padStart(3, '0');
+            html += `
+                <div class="full-set-container">
+                    <div class="full-set-header">
+                        <i class="fas fa-desktop"></i>
+                        PC${paddedSetId}
+                        <span class="component-count">${setItems.length} Components</span>
+                    </div>
+                    <div class="full-set-items">
+                        <div class="set-summary">
+                            <h4>PC Information</h4>
+                            <div class="set-meta">
+                                <div><strong>PC#:</strong> PC${paddedSetId}</div>
+                                <div><strong>Room:</strong> ${setItems[0].room_title}</div>
+                                <div><strong>Brand:</strong> ${setItems[0].brand || 'N/A'}</div>
+                                <div><strong>Model:</strong> ${setItems[0].model || 'N/A'}</div>
+                                <div><strong>Set ID:</strong> ${setId}</div>
+                            </div>
+                        </div>
+                        <div class="full-set-grid">`;
+            
+            setItems.forEach(item => {
+                let componentIcon = 'fa-cog';
+                let componentName = item.device_category;
+                
+                if (item.serial_number.includes('PC')) {
+                    componentIcon = 'fa-desktop';
+                    componentName = 'System Unit';
+                } else if (item.serial_number.includes('Monitor')) {
+                    componentIcon = 'fa-tv';
+                    componentName = 'Monitor';
+                } else if (item.serial_number.includes('Keyboard')) {
+                    componentIcon = 'fa-keyboard';
+                    componentName = 'Keyboard';
+                } else if (item.serial_number.includes('Mouse')) {
+                    componentIcon = 'fa-mouse';
+                    componentName = 'Mouse';
+                } else if (item.serial_number.includes('PSU')) {
+                    componentIcon = 'fa-plug';
+                    componentName = 'Power Supply';
+                }
+                
+                html += `
+                    <div class="full-set-item-box">
+                        <div class="full-set-item-flex">
+                            <div class="photo-wrapper-small">
+                                ${item.has_photo ? 
+                                    `<img src="/room-items/${item.id}/photo" alt="Item Photo">` :
+                                    `<i class="fas fa-image"></i>`
+                                }
+                            </div>
+                            <div class="full-set-item-info">
+                                <div class="full-set-item-title">
+                                    <i class="fas ${componentIcon}"></i> ${componentName}
+                                </div>
+                                <div><span class="label">Serial:</span> ${item.serial_number}</div>
+                                <div><span class="label">Category:</span> ${item.device_category}</div>
+                                ${item.description ? `<div><span class="label">Description:</span> ${item.description.substring(0, 50)}${item.description.length > 50 ? '...' : ''}</div>` : ''}
+                                <div>
+                                    <span class="label">Status:</span>
+                                    <span class="status-small ${item.status}">${item.status}</span>
+                                </div>
+                                <div class="barcode-image-small">
+                                    <img src="data:image/png;base64,${item.barcode_image}" alt="Barcode">
+                                    <div class="barcode-text-small">${item.barcode}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>`;
+            });
+            
+            html += `
+                        </div>
+                    </div>
+                </div>`;
+        });
+        
+        // Display Individual Items
+        individualItems.forEach(item => {
+            let pcNumber = null;
+            const barcodeMatch = item.barcode.match(/(\d{3})$/);
+            const serialMatch = item.serial_number.match(/(\d{3})$/);
+            
+            if (barcodeMatch) {
+                pcNumber = parseInt(barcodeMatch[1]);
+            } else if (serialMatch) {
+                pcNumber = parseInt(serialMatch[1]);
+            }
+            
+            const pcDisplay = pcNumber ? `<span style="color: #0d6efd; font-weight: 600; margin-left: 10px;">PC${pcNumber.toString().padStart(3, '0')}</span>` : '';
+            
+            html += `
+                <div class="item-box">
+                    <div class="photo-wrapper">
+                        ${item.has_photo ? 
+                            `<img src="/room-items/${item.id}/photo" alt="Item Photo">` :
+                            `<i class="fas fa-image"></i>`
+                        }
+                    </div>
+                    <div class="item-info">
+                        <div class="room-title">
+                            ${item.room_title}${pcDisplay}
+                        </div>
+                        <div><span class="label">Category:</span> ${item.device_category}</div>
+                        <div><span class="label">Type:</span> ${item.device_type || 'Unspecified'}</div>
+                        <div><span class="label">Brand:</span> ${item.brand || 'N/A'}</div>
+                        <div><span class="label">Model:</span> ${item.model || 'N/A'}</div>
+                        <div><span class="label">Serial Number:</span> ${item.serial_number}</div>
+                        <div><span class="label">Description:</span> ${item.description || 'N/A'}</div>
+                        <div>
+                            <span class="label">Status:</span>
+                            <span class="status ${item.status}">${item.status}</span>
+                        </div>
+                        <div class="barcode-image">
+                            <img src="data:image/png;base64,${item.barcode_image}" alt="Barcode">
+                            <div class="barcode-text">${item.barcode}</div>
+                        </div>
+                    </div>
+                </div>`;
+        });
+        
+        html += '</div>';
+        modalBody.innerHTML = html;
+    }
+
+    // Function to display not found message in modal
+    function displayManualNotFound(barcode) {
+        const modalBody = document.getElementById('modal-body-content');
+        modalBody.innerHTML = `
+            <div class="not-found">
+                ❌ No item found for barcode: <strong>${barcode}</strong>
+            </div>`;
+    }
     
     // Function to submit form with scanner styling
     function submitWithScannerEffect() {
@@ -850,7 +1182,8 @@ document.addEventListener('DOMContentLoaded', function() {
         showScannerStatus('Barcode scanned successfully!', 'active');
         
         setTimeout(() => {
-            form.submit();
+            const barcode = barcodeInput.value.trim();
+            submitManualScan(barcode);
         }, SCANNER_CONFIG.submitDelay);
     }
 
@@ -859,12 +1192,10 @@ document.addEventListener('DOMContentLoaded', function() {
         showCameraOverlayStatus('✓ Barcode Captured! Processing...', 'success');
         updateScanningLine('success');
         
-        // Stop camera after successful scan
         setTimeout(() => {
             stopCamera();
         }, 1000);
         
-        // Send AJAX request to API endpoint
         fetch('{{ route("roomitem.scan.api-search") }}', {
             method: 'POST',
             headers: {
@@ -894,7 +1225,6 @@ document.addEventListener('DOMContentLoaded', function() {
         let html = `<h3>🔍 Camera Scan Result for: <code>${barcode}</code></h3>`;
         
         items.forEach(item => {
-            // Extract PC number from barcode or serial number
             let pcNumber = null;
             const barcodeMatch = item.barcode.match(/(\d{3})$/);
             const serialMatch = item.serial_number.match(/(\d{3})$/);
@@ -945,12 +1275,10 @@ document.addEventListener('DOMContentLoaded', function() {
         cameraSection.classList.add('active');
         cameraControls.classList.add('hidden');
         
-        // Show overlay
         cameraOverlay.classList.add('active');
         showCameraOverlayStatus('📷 Starting Camera...', 'scanning');
         updateScanningLine();
         
-        // Request camera access
         navigator.mediaDevices.getUserMedia({
             video: { 
                 facingMode: "environment",
@@ -961,7 +1289,6 @@ document.addEventListener('DOMContentLoaded', function() {
             currentStream = stream;
             cameraVideo.srcObject = stream;
             
-            // Initialize Quagga
             Quagga.init({
                 inputStream: {
                     name: "Live",
@@ -1003,7 +1330,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 showCameraStatus('Camera ready - point at barcode', 'scanning');
                 cameraOverlayBtn.disabled = false;
                 
-                // Start scanning line animation and detection monitoring
                 startScanningMonitor();
             });
         }).catch(function(err) {
@@ -1019,40 +1345,33 @@ document.addEventListener('DOMContentLoaded', function() {
             Quagga.stop();
             cameraScanning = false;
             
-            // Stop current stream
             if (currentStream) {
                 currentStream.getTracks().forEach(track => track.stop());
                 currentStream = null;
             }
             
-            // Hide overlay
             cameraOverlay.classList.remove('active');
             cameraSection.classList.remove('active');
             cameraControls.classList.remove('hidden');
             
-            // Reset UI
             showCameraOverlayStatus('Camera stopped', '');
             showCameraStatus('Camera stopped', '');
             startCameraBtn.disabled = false;
             cameraOverlayBtn.disabled = true;
             updateScanningLine();
             
-            // Clear monitoring
             stopScanningMonitor();
             
-            // Reset detection variables
             lastDetectionTime = 0;
             detectionCount = 0;
         }
     }
     
-    // Function to start scanning monitor
     function startScanningMonitor() {
         scanningInterval = setInterval(() => {
             if (cameraScanning) {
                 const currentTime = Date.now();
                 
-                // Check if we have recent detections
                 if (currentTime - lastDetectionTime < 500) {
                     updateScanningLine('readable');
                     showCameraOverlayStatus('🎯 Barcode detected - hold steady', 'readable');
@@ -1064,7 +1383,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 100);
     }
     
-    // Function to stop scanning monitor
     function stopScanningMonitor() {
         if (scanningInterval) {
             clearInterval(scanningInterval);
@@ -1076,44 +1394,37 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Enhanced Quagga barcode detection with consistency checking
     Quagga.onDetected(function(data) {
         if (!cameraScanning) return;
         
         const barcode = data.codeResult.code;
         const currentTime = Date.now();
         
-        // Update detection tracking
         lastDetectionTime = currentTime;
         
-        // Simple barcode validation
         if (!barcode || barcode.length < 3) {
             return;
         }
         
         console.log('Barcode detected:', barcode);
         
-        // Clear existing timeout
         if (detectionTimeout) {
             clearTimeout(detectionTimeout);
         }
         
-        // Set timeout for processing
         detectionTimeout = setTimeout(() => {
             if (cameraScanning) {
                 detectionCount++;
                 
-                // Process the barcode immediately for better user experience
                 if (detectionCount >= 1) {
                     updateScanningLine('success');
                     showCameraOverlayStatus('✅ Barcode captured successfully!', 'success');
                     processCameraBarcode(barcode);
                 }
             }
-        }, 200); // Short delay to ensure stability
+        }, 200);
     });
     
-    // Quagga processing event for real-time feedback
     Quagga.onProcessed(function(result) {
         if (!cameraScanning) return;
         
@@ -1121,7 +1432,6 @@ document.addEventListener('DOMContentLoaded', function() {
         const drawingCanvas = Quagga.canvas.dom.overlay;
         
         if (result) {
-            // Clear previous drawings
             drawingCtx.clearRect(0, 0, parseInt(drawingCanvas.getAttribute("width")), parseInt(drawingCanvas.getAttribute("height")));
             
             if (result.boxes) {
@@ -1147,18 +1457,20 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     
-    // Camera button events
     startCameraBtn.addEventListener('click', startCamera);
     cameraOverlayBtn.addEventListener('click', stopCamera);
     
-    // Keyboard shortcuts
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape' && cameraScanning) {
-            stopCamera();
-        }
-    });
+    // Manual form submission
+    if (manualForm) {
+        manualForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const barcode = barcodeInput.value.trim();
+            if (barcode.length >= SCANNER_CONFIG.minLength) {
+                submitManualScan(barcode);
+            }
+        });
+    }
     
-    // Original input handling code (unchanged)
     barcodeInput.addEventListener('input', function(e) {
         const currentTime = Date.now();
         
@@ -1202,7 +1514,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 showScannerStatus('Processing barcode...', 'scanning');
                 setTimeout(() => {
-                    form.submit();
+                    submitManualScan(inputValue);
                 }, SCANNER_CONFIG.submitDelay);
             }
         }
@@ -1224,7 +1536,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 pastedValue.length <= SCANNER_CONFIG.maxLength) {
                 showScannerStatus('Barcode pasted - processing...', 'scanning');
                 setTimeout(() => {
-                    form.submit();
+                    submitManualScan(pastedValue);
                 }, SCANNER_CONFIG.submitDelay);
             }
         }, 10);
@@ -1236,10 +1548,14 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 1000);
     });
     
-    // Auto-focus on input when page loads
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && cameraScanning) {
+            stopCamera();
+        }
+    });
+    
     barcodeInput.focus();
     
-    // Cleanup on page unload
     window.addEventListener('beforeunload', function() {
         if (cameraScanning) {
             stopCamera();
@@ -1254,6 +1570,29 @@ document.addEventListener('DOMContentLoaded', function() {
 @section('content')
 <div class="main-content">
     <h1 class="page-title"><i class="fas fa-barcode"></i> Scan Barcode</h1>
+
+    <!-- RESULT MODAL -->
+    <div id="result-modal" class="modal-overlay">
+        <div class="modal-container">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <i class="fas fa-search"></i>
+                    Scan Results
+                </div>
+                <button id="modal-close" class="modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body" id="modal-body-content">
+                <!-- Results will be loaded here dynamically -->
+            </div>
+            <div class="modal-footer">
+                <button id="modal-exit" class="exit-button">
+                    <i class="fas fa-check"></i> Okay
+                </button>
+            </div>
+        </div>
+    </div>
 
     <!-- CAMERA OVERLAY FOR FOCUSED SCANNING -->
     <div class="camera-overlay">
@@ -1302,161 +1641,13 @@ document.addEventListener('DOMContentLoaded', function() {
         <!-- ORIGINAL MANUAL/SCANNER INPUT SECTION -->
         <div class="scanner-status"></div>
         
-        <form method="POST" action="{{ route('roomitem.scan.search') }}">
+        <form id="manual-scan-form" method="POST" action="{{ route('roomitem.scan.search') }}">
             @csrf
             <div class="form-group">
                 <input type="text" name="barcode" placeholder="Enter or scan barcode manually..." value="{{ old('barcode', $barcode ?? '') }}" required autofocus>
                 <button type="submit"><i class="fas fa-search"></i> Search</button>
             </div>
         </form>
-
-        @if(isset($scanned) && $scanned && isset($items) && count($items) > 0)
-            <div class="result">
-                <h3>🔍 Result for Barcode: <code>{{ $barcode }}</code></h3>
-
-                @php
-                    // Group items by set ID if they belong to a full set
-                    $fullSets = [];
-                    $individualItems = [];
-                    
-                    foreach($items as $item) {
-                        // Check if item is part of a full set by looking for set pattern in serial number
-                        if (preg_match('/^(PC|Monitor|Keyboard|Mouse|PSU)(\d+)$/i', $item->serial_number, $matches)) {
-                            $setId = $matches[2];
-                            if (!isset($fullSets[$setId])) {
-                                $fullSets[$setId] = [];
-                            }
-                            $fullSets[$setId][] = $item;
-                        } else {
-                            $individualItems[] = $item;
-                        }
-                    }
-                @endphp
-
-                {{-- Display Full Sets --}}
-                @foreach($fullSets as $setId => $setItems)
-                    <div class="full-set-container">
-                        <div class="full-set-header">
-                            <i class="fas fa-desktop"></i>
-                            PC{{ str_pad($setId, 3, '0', STR_PAD_LEFT) }}
-                            <span class="component-count">{{ count($setItems) }} Components</span>
-                        </div>
-                        <div class="full-set-items">
-                            <div class="set-summary">
-                                <h4>PC Information</h4>
-                                <div class="set-meta">
-                                    <div><strong>PC#:</strong> PC{{ str_pad($setId, 3, '0', STR_PAD_LEFT) }}</div>
-                                    <div><strong>Room:</strong> {{ $setItems[0]->room_title }}</div>
-                                    <div><strong>Brand:</strong> {{ $setItems[0]->brand ?? 'N/A' }}</div>
-                                    <div><strong>Model:</strong> {{ $setItems[0]->model ?? 'N/A' }}</div>
-                                    <div><strong>Set ID:</strong> {{ $setId }}</div>
-                                </div>
-                            </div>
-                            
-                            <div class="full-set-grid">
-                                @foreach($setItems as $item)
-                                    <div class="full-set-item-box">
-                                        <div class="full-set-item-flex">
-                                            <div class="photo-wrapper-small">
-                                                @if($item->photo)
-                                                    <img src="{{ route('room-item.photo', $item->id) }}" alt="Item Photo">
-                                                @else
-                                                    <i class="fas fa-image"></i>
-                                                @endif
-                                            </div>
-                                            <div class="full-set-item-info">
-                                                <div class="full-set-item-title">
-                                                    @if(str_contains($item->serial_number, 'PC'))
-                                                        <i class="fas fa-desktop"></i> System Unit
-                                                    @elseif(str_contains($item->serial_number, 'Monitor'))
-                                                        <i class="fas fa-tv"></i> Monitor
-                                                    @elseif(str_contains($item->serial_number, 'Keyboard'))
-                                                        <i class="fas fa-keyboard"></i> Keyboard
-                                                    @elseif(str_contains($item->serial_number, 'Mouse'))
-                                                        <i class="fas fa-mouse"></i> Mouse
-                                                    @elseif(str_contains($item->serial_number, 'PSU'))
-                                                        <i class="fas fa-plug"></i> Power Supply
-                                                    @else
-                                                        <i class="fas fa-cog"></i> {{ $item->device_category }}
-                                                    @endif
-                                                </div>
-                                                <div><span class="label">Serial:</span> {{ $item->serial_number }}</div>
-                                                <div><span class="label">Category:</span> {{ $item->device_category }}</div>
-                                                @if($item->description)
-                                                    <div><span class="label">Description:</span> {{ Str::limit($item->description, 50) }}</div>
-                                                @endif
-                                                <div>
-                                                    <span class="label">Status:</span>
-                                                    <span class="status-small {{ $item->status }}">{{ $item->status }}</span>
-                                                </div>
-                                                <div class="barcode-image-small">
-                                                    <img src="data:image/png;base64,{{ DNS1D::getBarcodePNG($item->barcode, 'C128', 1.5, 40) }}" alt="Barcode">
-                                                    <div class="barcode-text-small">{{ $item->barcode }}</div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                @endforeach
-                            </div>
-                        </div>
-                    </div>
-                @endforeach
-
-                {{-- Display Individual Items --}}
-                @foreach($individualItems as $item)
-                    @php
-                        // Try to extract PC number from barcode or serial number for individual items
-                        $pcNumber = null;
-                        if (preg_match('/(\d{3})$/', $item->barcode, $matches)) {
-                            $pcNumber = intval($matches[1]);
-                        } elseif (preg_match('/(\d{3})$/', $item->serial_number, $matches)) {
-                            $pcNumber = intval($matches[1]);
-                        }
-                    @endphp
-                    <div class="item-box">
-                        <div class="photo-wrapper">
-                            @if($item->photo)
-                                <img src="{{ route('room-item.photo', $item->id) }}" alt="Item Photo">
-                            @else
-                                <i class="fas fa-image"></i>
-                            @endif
-                        </div>
-                        <div class="item-info">
-                            <div class="room-title">
-                                {{ $item->room_title }}
-                                @if($pcNumber)
-                                    <span style="color: #0d6efd; font-weight: 600; margin-left: 10px;">PC{{ str_pad($pcNumber, 3, '0', STR_PAD_LEFT) }}</span>
-                                @endif
-                            </div>
-
-                            <div><span class="label">Category:</span> {{ $item->device_category }}</div>
-                            <div><span class="label">Type:</span> {{ $item->device_type ?? 'Unspecified' }}</div>
-                            <div><span class="label">Brand:</span> {{ $item->brand ?? 'N/A' }}</div>
-                            <div><span class="label">Model:</span> {{ $item->model ?? 'N/A' }}</div>
-                            <div><span class="label">Serial Number:</span> {{ $item->serial_number }}</div>
-                            <div><span class="label">Description:</span> {{ $item->description }}</div>
-                            <div>
-                                <span class="label">Status:</span>
-                                <span class="status {{ $item->status }}">{{ $item->status }}</span>
-                            </div>
-                            <div class="barcode-image">
-                                <img src="data:image/png;base64,{{ DNS1D::getBarcodePNG($item->barcode, 'C128', 2, 60) }}" alt="Barcode">
-                                <div class="barcode-text">{{ $item->barcode }}</div>
-                            </div>
-                        </div>
-                    </div>
-                @endforeach
-            </div>
-            <a href="{{ route('roomitem.scan.index') }}" class="exit-button">
-                <i class="fas fa-check"></i> Okay
-            </a>
-
-        @elseif(isset($notFound) && $notFound)
-            <div class="not-found">
-                ❌ No item found for barcode: <strong>{{ $barcode }}</strong>
-            </div>
-        @endif
-        
     </div>
 </div>
 @endsection

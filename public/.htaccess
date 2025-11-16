@@ -14,3 +14,19 @@
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule ^ index.php [L]
 </IfModule>
+
+# Security Headers (backup for static files, main headers set via middleware)
+<IfModule mod_headers.c>
+    # X-Frame-Options: Prevents clickjacking
+    Header always set X-Frame-Options "DENY"
+    
+    # X-Content-Type-Options: Prevents MIME type sniffing
+    Header always set X-Content-Type-Options "nosniff"
+    
+    # Referrer-Policy: Controls referrer information
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    
+    # Remove server information disclosure
+    Header unset X-Powered-By
+    Header unset Server
+</IfModule>

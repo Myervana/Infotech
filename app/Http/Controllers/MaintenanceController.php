@@ -72,9 +72,20 @@ class MaintenanceController extends Controller
         $fullsets = collect($fullsets);
 
         // Get maintenance notes for each fullset
-        $notes = MaintenanceNote::whereIn('fullset_id', array_keys($fullsets->toArray()))->get()->keyBy('fullset_id');
+        $notes = MaintenanceNote::whereIn('fullset_id', array_keys($fullsets->toArray()))
+            ->whereNull('room_item_id')
+            ->get()
+            ->keyBy('fullset_id');
 
-        return view('maintenance', compact('fullsets', 'notes'));
+        // Get item-level maintenance notes
+        $itemNotes = MaintenanceNote::whereNotNull('room_item_id')
+            ->whereHas('roomItem', function($query) use ($user) {
+                $query->where('user_id', $user->id);
+            })
+            ->get()
+            ->keyBy('room_item_id');
+
+        return view('maintenance', compact('fullsets', 'notes', 'itemNotes'));
     }
 
     public function updateStatus(Request $request, $id)
@@ -119,6 +130,27 @@ class MaintenanceController extends Controller
         );
 
         return redirect()->back()->with('success', 'Note updated successfully for ' . $displayName);
+    }
+
+    public function updateItemNote(Request $request, $id)
+    {
+        $request->validate([
+            'note' => 'nullable|string|max:1000'
+        ]);
+
+        $user = auth()->user();
+        
+        // Always verify the item belongs to the user
+        $item = RoomItem::where('id', $id)
+            ->where('user_id', $user->id)
+            ->firstOrFail();
+
+        MaintenanceNote::updateOrCreate(
+            ['room_item_id' => $id],
+            ['note' => $request->note, 'updated_at' => now()]
+        );
+
+        return redirect()->back()->with('success', 'Note updated successfully for ' . $item->device_category);
     }
 
     public function updateBulkStatus(Request $request, $fullsetId)

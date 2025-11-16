@@ -20,6 +20,15 @@ class Borrow extends Model
         'borrow_date',
         'return_date',
         'status', // 'Borrowed' or 'Returned'
+        'reason',
+        'borrow_duration',
+        'due_date',
+    ];
+
+    protected $casts = [
+        'borrow_date' => 'datetime',
+        'return_date' => 'datetime',
+        'due_date' => 'datetime',
     ];
 
     /**
@@ -28,6 +37,14 @@ class Borrow extends Model
     public function roomItem()
     {
         return $this->belongsTo(RoomItem::class, 'room_item_id');
+    }
+
+    /**
+     * Relationship: This borrow has many extensions
+     */
+    public function extensions()
+    {
+        return $this->hasMany(BorrowExtension::class);
     }
 
     /**
@@ -60,5 +77,26 @@ class Borrow extends Model
     public function getIsBorrowedAttribute()
     {
         return $this->status === 'Borrowed';
+    }
+
+    /**
+     * Accessor: Check if the item is overdue
+     */
+    public function getIsOverdueAttribute()
+    {
+        if ($this->status !== 'Borrowed' || !$this->due_date) {
+            return false;
+        }
+        return now()->greaterThan($this->due_date);
+    }
+
+    /**
+     * Scope: Only overdue items
+     */
+    public function scopeOverdue($query)
+    {
+        return $query->where('status', 'Borrowed')
+            ->whereNotNull('due_date')
+            ->where('due_date', '<', now());
     }
 }

@@ -65,8 +65,64 @@
         
     </style>
     @stack('styles')
+    <!-- SweetAlert2 CSS for global notifications -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
 <body>
+    @php
+        // Get overdue items for global notification (only if user is authenticated)
+        $globalOverdueItems = [];
+        if (auth()->check()) {
+            $globalOverdueItems = \App\Models\Borrow::with('roomItem')
+                ->whereHas('roomItem', function($query) {
+                    $query->where('user_id', auth()->user()->id);
+                })
+                ->overdue()
+                ->get()
+                ->groupBy('borrower_name');
+        }
+    @endphp
+    
+    @if($globalOverdueItems->count() > 0)
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Show overdue notifications after a short delay
+            setTimeout(function() {
+                @foreach($globalOverdueItems as $borrowerName => $borrows)
+                    const overdueCount{{ $loop->index }} = {{ $borrows->count() }};
+                    const borrowerName{{ $loop->index }} = @json($borrowerName);
+                    const daysOverdue{{ $loop->index }} = {{ $borrows->first()->due_date->diffInDays(now()) }};
+                    const dueDate{{ $loop->index }} = @json($borrows->first()->due_date->format('M d, Y (g:i A)'));
+                    
+                    Swal.fire({
+                        icon: 'warning',
+                        title: '⚠️ Overdue Items',
+                        html: `
+                            <div style="text-align: left;">
+                                <p><strong>Borrower:</strong> ${borrowerName{{ $loop->index }}}</p>
+                                <p><strong>Items Overdue:</strong> ${overdueCount{{ $loop->index }}} item(s)</p>
+                                <p><strong>Due Date:</strong> ${dueDate{{ $loop->index }}}</p>
+                                <p><strong>Days Overdue:</strong> ${daysOverdue{{ $loop->index }}} day(s)</p>
+                                <p style="color: #dc3545; margin-top: 15px; font-weight: 600;">⚠️ These items are past their due date and need to be returned immediately!</p>
+                            </div>
+                        `,
+                        confirmButtonText: 'View Borrow Page',
+                        confirmButtonColor: '#dc3545',
+                        showCancelButton: true,
+                        cancelButtonText: 'Close',
+                        allowOutsideClick: true,
+                        allowEscapeKey: true,
+                    }).then((result) => {
+                        if (result.isConfirmed) {
+                            window.location.href = '/borrow';
+                        }
+                    });
+                @endforeach
+            }, 1000);
+        });
+    </script>
+    @endif
 <nav>
     <img src="/images/logo.png" alt="Logo">
     <h2>IT DEPARTMENT</h2>

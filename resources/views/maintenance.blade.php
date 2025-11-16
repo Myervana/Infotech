@@ -1040,6 +1040,12 @@
                                                                             <div class="item-notes-header">
                                                                                 Issue Details for {{ $item->device_category }} ({{ $item->barcode }})
                                                                             </div>
+                                                                            @if(isset($itemNotes[$item->id]) && $itemNotes[$item->id]->reason)
+                                                                                <div style="padding: 12px 16px; background: #fff3cd; border-left: 4px solid #f39c12; margin-bottom: 15px; border-radius: 4px;">
+                                                                                    <div style="font-weight: 600; color: #856404; margin-bottom: 5px;">📝 Reason (from Return):</div>
+                                                                                    <div style="color: #856404; font-size: 14px;">{{ $itemNotes[$item->id]->reason }}</div>
+                                                                                </div>
+                                                                            @endif
                                                                             <form action="{{ url('/maintenance/item-note/' . $item->id) }}" method="POST" class="item-notes-form">
                                                                                 @csrf
                                                                                 <textarea 

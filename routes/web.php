@@ -107,12 +107,15 @@ Route::middleware('auth')->group(function () {
     Route::get('/maintenance', [MaintenanceController::class, 'index']);
     Route::post('/maintenance/update-status/{id}', [MaintenanceController::class, 'updateStatus']);
     Route::post('/maintenance/note/{fullsetId}', [MaintenanceController::class, 'updateNote'])->name('maintenance.update-note');
+    Route::post('/maintenance/item-note/{id}', [MaintenanceController::class, 'updateItemNote'])->name('maintenance.item-note');
 Route::post('/maintenance/bulk-update/{fullsetId}', [MaintenanceController::class, 'updateBulkStatus'])->name('maintenance.bulk-update');
 
     // BORROW ITEMS
     Route::get('/borrow', [BorrowController::class, 'index']);
     Route::post('/borrow', [BorrowController::class, 'store']);
     Route::post('/borrow/return/{id}', [BorrowController::class, 'returnItem']);
+    Route::post('/borrow/return-bulk', [BorrowController::class, 'returnBulk'])->name('borrow.return-bulk');
+    Route::post('/borrow/extend', [BorrowController::class, 'extend'])->name('borrow.extend');
 
     // PRINT REPORT
     Route::get('/print-report', [PrintReportController::class, 'index']);

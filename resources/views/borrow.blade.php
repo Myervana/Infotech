@@ -2,9 +2,6 @@
 @section('title', 'Borrow')
 @section('content')
 @push('styles')
-    <!-- Leaflet CSS 2025 -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder@1.13.0/dist/Control.Geocoder.css" />
     <!-- SweetAlert2 CSS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
     <style>
@@ -264,6 +261,28 @@
             cursor: not-allowed !important;
             transform: none !important;
             box-shadow: none !important;
+        }
+
+        .btn-extend {
+            background: linear-gradient(135deg, #ffc107, #ff9800);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            cursor: pointer;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            min-width: fit-content;
+        }
+
+        .btn-extend:hover {
+            background: linear-gradient(135deg, #e0a800, #f57c00);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 15px rgba(255, 193, 7, 0.3);
         }
 
         /* Empty State */
@@ -597,6 +616,21 @@
             margin: 15px 0;
             z-index: 1;
         }
+        
+        /* Custom marker styles for Leaflet */
+        .custom-marker {
+            background: transparent !important;
+            border: none !important;
+        }
+        
+        /* Leaflet popup styling */
+        .leaflet-popup-content-wrapper {
+            border-radius: 10px;
+        }
+        
+        .leaflet-popup-content {
+            margin: 0;
+        }
 
         .map-container {
             margin: 15px 0;
@@ -844,110 +878,96 @@
                         <th><i class="fas fa-user"></i> Borrower</th>
                         <th><i class="fas fa-calendar"></i> Borrow Date</th>
                         <th><i class="fas fa-undo"></i> Return</th>
+                        <th><i class="fas fa-clock"></i> Extend</th>
                     </tr>
                 </thead>
                 <tbody>
                     @php
-                        // Group items by PC#/full_set_id similar to room-manage.blade.php
-                        $groupedItems = [];
-                        $individualItems = [];
+                        // Group items by borrower name
+                        $borrowerGroups = [];
+                        
+                        // Ensure borrowerGroupsData is defined
+                        $borrowerGroupsData = $borrowerGroupsData ?? [];
                         
                         foreach($items as $item) {
-                            $pcNumber = null;
-                            
-                            // Try to extract PC number from various sources
-                            if (preg_match('/(\d{3})$/', $item->barcode ?? '', $matches)) {
-                                $pcNumber = intval($matches[1]);
-                            } elseif (preg_match('/(\d{3})$/', $item->serial_number ?? '', $matches)) {
-                                $pcNumber = intval($matches[1]);
-                            } elseif ($item->full_set_id && preg_match('/(\d{3})$/', $item->full_set_id, $matches)) {
-                                $pcNumber = intval($matches[1]);
-                            } elseif (preg_match('/(\d{3})/', ($item->barcode ?? '') . ' ' . ($item->serial_number ?? ''), $matches)) {
-                                $pcNumber = intval($matches[1]);
-                            }
-                            
-                            if ($pcNumber !== null) {
-                                if (!isset($groupedItems[$pcNumber])) {
-                                    $groupedItems[$pcNumber] = [];
+                            if ($item->latestBorrow && $item->latestBorrow->status === 'Borrowed') {
+                                $borrowerName = $item->latestBorrow->borrower_name;
+                                
+                                if (!isset($borrowerGroups[$borrowerName])) {
+                                    $borrowerGroups[$borrowerName] = [
+                                        'borrower' => $item->latestBorrow,
+                                        'items' => []
+                                    ];
                                 }
-                                $groupedItems[$pcNumber][] = $item;
-                            } else {
-                                $individualItems[] = $item;
+                                
+                                $borrowerGroups[$borrowerName]['items'][] = $item;
                             }
                         }
                         
-                        ksort($groupedItems, SORT_NUMERIC);
+                        // Sort by borrower name
+                        ksort($borrowerGroups);
                     @endphp
                     
-                    @forelse($groupedItems as $pcNumber => $pcItems)
-                        @foreach($pcItems as $item)
-                            <tr>
-                                <td><strong>{{ $item->room_title }}</strong></td>
-                                <td>{{ $item->device_category }}</td>
-                                <td><code>{{ $item->serial_number }}</code> @if($item->is_full_item) <span style="color: #667eea; font-size: 11px;">(PC#{{ $pcNumber }})</span> @endif</td>
-                                <td>{{ $item->description }}</td>
-                                <td>
-                                    @if($item->status === 'Unusable')
-                                        <span class="unusable">❌ Unusable</span>
-                                    @elseif($item->latestBorrow && $item->latestBorrow->status === 'Borrowed')
-                                        <span class="status-badge status-borrowed">Borrowed</span>
+                    @forelse($borrowerGroups as $borrowerName => $group)
+                        @php
+                            $borrower = $group['borrower'];
+                            $groupItems = $group['items'];
+                            $groupId = 'borrower-' . md5($borrowerName);
+                            $hasActiveBorrows = collect($groupItems)->filter(function($item) {
+                                return $item->latestBorrow && $item->latestBorrow->status === 'Borrowed';
+                            })->count() > 0;
+                        @endphp
+                        
+                        <!-- Borrower Group Header -->
+                        <tr class="borrower-group-header" data-borrower-group="{{ $groupId }}">
+                            <td colspan="9" style="background: linear-gradient(135deg, #667eea, #764ba2); color: white; font-weight: 600; cursor: pointer; padding: 15px 20px;" onclick="toggleBorrowerGroup('{{ $groupId }}')">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div style="display: flex; align-items: center; gap: 15px;">
+                                        @if($borrower->borrower_photo)
+                                            <img src="{{ asset('storage/' . $borrower->borrower_photo) }}" 
+                                                 alt="Borrower" 
+                                                 style="width: 40px; height: 40px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.3); object-fit: cover;"
+                                                 onerror="this.onerror=null; this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';">
+                                            <div style="display: none; width: 40px; height: 40px; border-radius: 50%; background: rgba(255,255,255,0.2); align-items: center; justify-content: center; font-size: 18px; border: 2px solid rgba(255,255,255,0.3);">👤</div>
                                     @else
-                                        <span class="status-badge status-usable">Usable</span>
+                                            <div style="width: 40px; height: 40px; border-radius: 50%; background: rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; font-size: 18px; border: 2px solid rgba(255,255,255,0.3);">👤</div>
                                     @endif
-                                </td>
-                                <td>
-                                    @if($item->latestBorrow)
                                         <div>
-                                            @if($item->latestBorrow->borrower_photo)
-                                                <img src="{{ asset('storage/' . $item->latestBorrow->borrower_photo) }}" 
-                                                     alt="Borrower" 
-                                                     style="width: 30px; height: 30px; border-radius: 50%; margin-right: 5px; vertical-align: middle; object-fit: cover;"
-                                                     onerror="this.onerror=null; this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-flex';">
-                                                <span style="display: none; width: 30px; height: 30px; border-radius: 50%; background: #e9ecef; align-items: center; justify-content: center; font-size: 14px; margin-right: 5px;">👤</span>
+                                            <div style="font-size: 16px;">{{ $borrowerName }}</div>
+                                            @if($borrower->position)
+                                                <div style="font-size: 12px; opacity: 0.9;">{{ $borrower->position }}</div>
                                             @endif
-                                            {{ $item->latestBorrow->borrower_name }}
-                                            @if($item->latestBorrow->position)
-                                                <br><small style="color: #6c757d;">{{ $item->latestBorrow->position }}</small>
-                                            @endif
-                                            @if($item->latestBorrow->department)
-                                                <br><small style="color: #6c757d;">{{ $item->latestBorrow->department }}</small>
+                                            @if($borrower->department)
+                                                <div style="font-size: 12px; opacity: 0.9;">{{ $borrower->department }}</div>
                                             @endif
                                         </div>
-                                    @else
-                                        -
-                                    @endif
-                                </td>
-
-                                <td>
-                                   @if($item->latestBorrow && $item->latestBorrow->borrow_date)
-            <div class="date-info">
-                <span class="date-main">{{ \Carbon\Carbon::parse($item->latestBorrow->borrow_date)->format('M d, Y (g:i A)') }}</span>
-                <span class="date-relative">{{ \Carbon\Carbon::parse($item->latestBorrow->borrow_date)->diffForHumans() }}</span>
+                                        <div style="font-size: 12px; opacity: 0.9;">
+                                            {{ count($groupItems) }} item{{ count($groupItems) > 1 ? 's' : '' }}
             </div>
-        @else
-            -
+                                    </div>
+                                    <div style="display: flex; align-items: center; gap: 15px;">
+                                        @if($hasActiveBorrows)
+                                            @php
+                                                $itemsData = isset($borrowerGroupsData[$borrowerName]) ? $borrowerGroupsData[$borrowerName] : [];
+                                            @endphp
+                                            <button type="button" 
+                                                    class="btn-return return-all-btn" 
+                                                    style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3);" 
+                                                    data-group-id="{{ $groupId }}"
+                                                    data-items='@json($itemsData)'
+                                                    onclick="event.stopPropagation();">
+                                                <i class="fas fa-undo"></i> Return All
+                                            </button>
         @endif
-
-                                </td>
-                                <td>
-                                    @if($item->latestBorrow && $item->latestBorrow->status === 'Borrowed')
-            <form method="POST" action="/borrow/return/{{ $item->latestBorrow->id }}">
-                @csrf
-                <button class="btn-return"><i class="fas fa-check"></i> Return</button>
-            </form>
-        @elseif($item->status === 'Unusable')
-            <button class="btn-return btn-disabled" disabled><i class="fas fa-times"></i> Not Usable</button>
-        @else
-            <button class="btn-return btn-disabled" disabled><i class="fas fa-check"></i> Returned</button>
-        @endif
-
+                                        <span class="toggle-icon" id="icon-{{ $groupId }}" style="font-size: 18px;">▶</span>
+                                    </div>
+                                </div>
                                 </td>
                             </tr>
-                        @endforeach
-                    @endforeach
                     
-                    @forelse($individualItems as $item)
-                        <tr>
+                        <!-- Borrower Group Items -->
+                        @foreach($groupItems as $item)
+                            <tr class="borrower-group-items" data-group="{{ $groupId }}" style="display: none;">
                             <td><strong>{{ $item->room_title }}</strong></td>
                             <td>{{ $item->device_category }}</td>
                             <td><code>{{ $item->serial_number }}</code></td>
@@ -962,29 +982,6 @@
                                 @endif
                             </td>
                             <td>
-                                @if($item->latestBorrow)
-                                    <div>
-                                        @if($item->latestBorrow->borrower_photo)
-                                            <img src="{{ asset('storage/' . $item->latestBorrow->borrower_photo) }}" 
-                                                 alt="Borrower" 
-                                                 style="width: 30px; height: 30px; border-radius: 50%; margin-right: 5px; vertical-align: middle; object-fit: cover;"
-                                                 onerror="this.onerror=null; this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-flex';">
-                                            <span style="display: none; width: 30px; height: 30px; border-radius: 50%; background: #e9ecef; align-items: center; justify-content: center; font-size: 14px; margin-right: 5px;">👤</span>
-                                        @endif
-                                        {{ $item->latestBorrow->borrower_name }}
-                                        @if($item->latestBorrow->position)
-                                            <br><small style="color: #6c757d;">{{ $item->latestBorrow->position }}</small>
-                                        @endif
-                                        @if($item->latestBorrow->department)
-                                            <br><small style="color: #6c757d;">{{ $item->latestBorrow->department }}</small>
-                                        @endif
-                                    </div>
-                                @else
-                                    -
-                                @endif
-                            </td>
-
-                            <td>
                                @if($item->latestBorrow && $item->latestBorrow->borrow_date)
         <div class="date-info">
             <span class="date-main">{{ \Carbon\Carbon::parse($item->latestBorrow->borrow_date)->format('M d, Y (g:i A)') }}</span>
@@ -993,33 +990,37 @@
     @else
         -
     @endif
-
                             </td>
                             <td>
                                 @if($item->latestBorrow && $item->latestBorrow->status === 'Borrowed')
-        <form method="POST" action="/borrow/return/{{ $item->latestBorrow->id }}">
-            @csrf
-            <button class="btn-return"><i class="fas fa-check"></i> Return</button>
-        </form>
-    @elseif($item->status === 'Unusable')
-        <button class="btn-return btn-disabled" disabled><i class="fas fa-times"></i> Not Usable</button>
+                                        <span class="status-badge status-borrowed">Active</span>
     @else
-        <button class="btn-return btn-disabled" disabled><i class="fas fa-check"></i> Returned</button>
+                                        <span class="status-badge status-usable">Returned</span>
     @endif
-
+                            </td>
+                            <td>
+                                @if($item->latestBorrow && $item->latestBorrow->status === 'Borrowed')
+                                    <button onclick="openExtendModal({{ $item->latestBorrow->id }}, '{{ $item->latestBorrow->borrower_name }}', '{{ $item->device_category }}', '{{ $item->serial_number }}', '{{ $item->latestBorrow->due_date ? $item->latestBorrow->due_date->format('Y-m-d H:i:s') : '' }}', @json($item->latestBorrow->extensions ?? []))" class="btn-extend" title="Extend Borrow Period">
+                                        <i class="fas fa-clock"></i> Extend
+                                        @if($item->latestBorrow->extensions && $item->latestBorrow->extensions->count() > 0)
+                                            <span style="background: rgba(255,255,255,0.3); border-radius: 10px; padding: 2px 6px; font-size: 10px; margin-left: 5px;">{{ $item->latestBorrow->extensions->count() }}</span>
+                                        @endif
+                                    </button>
+                                @else
+                                    <span style="color: #6c757d;">-</span>
+                                @endif
                             </td>
                         </tr>
+                        @endforeach
                     @empty
-                        @if(empty($groupedItems))
                             <tr>
-                                <td colspan="8">
+                                <td colspan="9">
                                     <div class="empty-state">
                                         <div class="empty-state-icon">📭</div>
-                                        <p>No items found.</p>
+                                    <p>No borrowed items found.</p>
                                     </div>
                                 </td>
                             </tr>
-                        @endif
                     @endforelse
                 </tbody>
             </table>
@@ -1223,6 +1224,8 @@
                         @endforeach
                     </div>
                     <input type="hidden" name="room_item_id" id="room_item_id" required>
+                    <input type="hidden" name="selected_pc_number" id="selected_pc_number" value="">
+                    <input type="hidden" name="selected_room_title" id="selected_room_title" value="">
                 </div>
             </div>
 
@@ -1268,7 +1271,35 @@
             </div>
 
             <div class="form-group">
-                <button type="button" class="setup-map-btn" onclick="setupMap()">
+                <label for="reason">Reason for Borrowing</label>
+                <textarea name="reason" id="reason" rows="3" placeholder="Enter the reason for borrowing this item..." style="width: 100%; padding: 10px; border: 2px solid #e9ecef; border-radius: 8px; font-size: 14px; resize: vertical;" required></textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="borrow_duration">Borrow Duration</label>
+                <select name="borrow_duration" id="borrow_duration" required onchange="updateDueDate()">
+                    <option value="">-- Select Duration --</option>
+                    <option value="1_day">1 Day</option>
+                    <option value="2_days">2 Days</option>
+                    <option value="3_days">3 Days</option>
+                    <option value="4_days">4 Days</option>
+                    <option value="1_week">1 Week</option>
+                </select>
+                <small style="color: #6c757d; display: block; margin-top: 5px;">
+                    <i class="fas fa-info-circle"></i> Select how long you need to borrow this item.
+                </small>
+                <div id="dueDateDisplay" style="margin-top: 10px; padding: 10px; background: #e3f2fd; border-radius: 8px; display: none;">
+                    <strong>Due Date:</strong> <span id="dueDateText"></span>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="borrow_date">Borrow Date</label>
+                <input type="datetime-local" name="borrow_date" id="borrow_date" required onchange="updateDueDate()">
+            </div>
+
+            <div class="form-group">
+                <button type="button" class="setup-map-btn" onclick="setupMapFullscreen()">
                     <i class="fas fa-map-marker-alt"></i> Setup Map Location
                 </button>
                 <div id="map" style="display: none;"></div>
@@ -1276,14 +1307,88 @@
                 <input type="hidden" name="longitude" id="longitude">
             </div>
 
-            <div class="form-group">
-                <label for="borrow_date">Borrow Date</label>
-                <input type="datetime-local" name="borrow_date" id="borrow_date" required>
-            </div>
-
             <button type="submit" class="submit-btn">
                 <i class="fas fa-check"></i> Submit Borrow Request
             </button>
+        </form>
+    </div>
+</div>
+
+<!-- Modal: Return Items -->
+<div id="returnModal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeReturnModal()">&times;</span>
+        <h3>🔄 Return Items</h3>
+        <form id="returnForm" method="POST" action="/borrow/return-bulk" onsubmit="return validateReturnForm(event)">
+            @csrf
+            <div id="returnItemsContainer"></div>
+            <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
+                <button type="button" class="submit-btn" style="background: #6c757d;" onclick="closeReturnModal()">Cancel</button>
+                <button type="submit" class="submit-btn">Return Items</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal: Extend Borrow Period -->
+<div id="extendModal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeExtendModal()">&times;</span>
+        <h3>⏰ Extend Borrow Period</h3>
+        <form id="extendForm" method="POST" action="/borrow/extend" onsubmit="return validateExtendForm(event)">
+            @csrf
+            <input type="hidden" name="borrow_id" id="extend_borrow_id">
+            
+            <div class="form-group">
+                <label><strong>Borrower:</strong></label>
+                <p id="extend_borrower_name" style="padding: 10px; background: #f8f9fa; border-radius: 8px; margin: 0;"></p>
+            </div>
+            
+            <div class="form-group">
+                <label><strong>Item:</strong></label>
+                <p id="extend_item_info" style="padding: 10px; background: #f8f9fa; border-radius: 8px; margin: 0;"></p>
+            </div>
+            
+            <div class="form-group">
+                <label><strong>Current Due Date:</strong></label>
+                <p id="extend_current_due_date" style="padding: 10px; background: #fff3cd; border-radius: 8px; margin: 0; color: #856404;"></p>
+            </div>
+            
+            <div class="form-group">
+                <label for="extend_duration">Extension Duration</label>
+                <select name="extend_duration" id="extend_duration" required onchange="updateExtendedDueDate()">
+                    <option value="">-- Select Duration --</option>
+                    <option value="1_day">1 Day</option>
+                    <option value="2_days">2 Days</option>
+                    <option value="3_days">3 Days</option>
+                    <option value="4_days">4 Days</option>
+                    <option value="1_week">1 Week</option>
+                </select>
+                <small style="color: #6c757d; display: block; margin-top: 5px;">
+                    <i class="fas fa-info-circle"></i> Select how many additional days you want to extend the borrow period.
+                </small>
+            </div>
+            
+            <div class="form-group">
+                <label for="extend_reason">Reason for Extension</label>
+                <textarea name="extend_reason" id="extend_reason" rows="3" placeholder="Enter the reason for extending this borrow period..." style="width: 100%; padding: 10px; border: 2px solid #e9ecef; border-radius: 8px; font-size: 14px; resize: vertical;" required></textarea>
+            </div>
+            
+            <div id="extendedDueDateDisplay" style="margin-top: 10px; padding: 15px; background: #d4edda; border-radius: 8px; display: none; border-left: 4px solid #28a745;">
+                <strong style="color: #155724;">New Due Date:</strong> <span id="extendedDueDateText" style="color: #155724; font-weight: 600;"></span>
+            </div>
+            
+            <div id="extensionHistoryContainer" style="margin-top: 20px; display: none;">
+                <h4 style="color: #667eea; margin-bottom: 15px;"><i class="fas fa-history"></i> Extension History</h4>
+                <div id="extensionHistoryList" style="max-height: 200px; overflow-y: auto; border: 1px solid #e9ecef; border-radius: 8px; padding: 10px;">
+                    <!-- Extension history will be populated here -->
+                </div>
+            </div>
+            
+            <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
+                <button type="button" class="submit-btn" style="background: #6c757d;" onclick="closeExtendModal()">Cancel</button>
+                <button type="submit" class="submit-btn" style="background: linear-gradient(135deg, #ffc107, #ff9800);">Extend Period</button>
+            </div>
         </form>
     </div>
 </div>
@@ -1326,9 +1431,30 @@
                                 @if($activity->department)
                                     <br><small style="color: #6c757d;">{{ $activity->department }}</small>
                                 @endif
+                                @if(isset($activity->items_count) && $activity->items_count > 1)
+                                    <br><small style="color: #667eea; font-weight: 600;">{{ $activity->items_count }} items</small>
+                                @endif
                             </td>
-                            <td><code>{{ $activity->roomItem->serial_number ?? 'N/A' }}</code></td>
-                            <td>{{ $activity->roomItem->device_category ?? 'N/A' }}</td>
+                            <td>
+                                @if(isset($activity->items_count) && $activity->items_count > 1)
+                                    <div>
+                                        <code>{{ $activity->roomItem->serial_number ?? 'N/A' }}</code>
+                                        <br><small style="color: #6c757d;">+ {{ $activity->items_count - 1 }} more item(s)</small>
+                                    </div>
+                                @else
+                                    <code>{{ $activity->roomItem->serial_number ?? 'N/A' }}</code>
+                                @endif
+                            </td>
+                            <td>
+                                @if(isset($activity->items_count) && $activity->items_count > 1)
+                                    <div>
+                                        {{ $activity->roomItem->device_category ?? 'N/A' }}
+                                        <br><small style="color: #6c757d;">Multiple categories</small>
+                                    </div>
+                                @else
+                                    {{ $activity->roomItem->device_category ?? 'N/A' }}
+                                @endif
+                            </td>
                             <td>
                                 <div class="date-info">
                                     <span class="date-main">{{ \Carbon\Carbon::parse($activity->borrow_date)->format('M d, Y (g:i A)') }}</span>
@@ -1343,6 +1469,9 @@
                                     </div>
                                 @else
                                     <span class="status-badge status-borrowed">Not Returned</span>
+                                    @if($activity->due_date)
+                                        <br><small style="color: #6c757d;">Due: {{ \Carbon\Carbon::parse($activity->due_date)->format('M d, Y (g:i A)') }}</small>
+                                    @endif
                                 @endif
                             </td>
                             <td>
@@ -1367,13 +1496,43 @@
     </div>
 </div>
 
-<!-- Leaflet JS 2025 -->
+<!-- Leaflet CSS (Free OpenStreetMap-based mapping) -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder@1.13.0/dist/Control.Geocoder.css" />
+<!-- Leaflet JS (Free OpenStreetMap-based mapping) -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-control-geocoder@1.13.0/dist/Control.Geocoder.js"></script>
 <!-- SweetAlert2 JS -->
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 <script>
+    // Check for overdue items and show notifications
+    @if(isset($overdueItems) && $overdueItems->count() > 0)
+        document.addEventListener('DOMContentLoaded', function() {
+            @foreach($overdueItems as $borrowerName => $borrows)
+                const overdueCount{{ $loop->index }} = {{ $borrows->count() }};
+                const borrowerName{{ $loop->index }} = @json($borrowerName);
+                const daysOverdue{{ $loop->index }} = {{ $borrows->first()->due_date->diffInDays(now()) }};
+                
+                Swal.fire({
+                    icon: 'warning',
+                    title: '⚠️ Overdue Items',
+                    html: `
+                        <div style="text-align: left;">
+                            <p><strong>Borrower:</strong> ${borrowerName{{ $loop->index }}}</p>
+                            <p><strong>Items Overdue:</strong> ${overdueCount{{ $loop->index }}} item(s)</p>
+                            <p><strong>Days Overdue:</strong> ${daysOverdue{{ $loop->index }}} day(s)</p>
+                            <p style="color: #dc3545; margin-top: 10px;"><strong>Please return the items immediately!</strong></p>
+                        </div>
+                    `,
+                    confirmButtonColor: '#dc3545',
+                    allowOutsideClick: true,
+                    allowEscapeKey: true,
+                });
+            @endforeach
+        });
+    @endif
+
     // Initialize SweetAlert for session messages
     @if (session('success'))
         Swal.fire({
@@ -1417,6 +1576,11 @@
     let trackerMap = null;
     let marker = null;
     let trackerMarkers = [];
+    let geocoder = null;
+    let currentMapType = 'roadmap'; // 'roadmap' or 'satellite'
+    let currentBaseLayer = null;
+    let roadmapLayer = null;
+    let satelliteLayer = null;
 
     // Original JavaScript functionality preserved
     function openBorrowModal() {
@@ -1428,10 +1592,8 @@
         document.getElementById("borrowModal").style.display = "none";
         document.body.style.overflow = "auto";
         // Reset form
-        if (map) {
-            map.remove();
-            map = null;
-            marker = null;
+        if (marker && marker.closePopup) {
+            marker.closePopup();
         }
         document.getElementById("map").style.display = "none";
         document.getElementById("photoPreview").classList.remove("show");
@@ -1448,23 +1610,349 @@
     function closeTrackerModal() {
         document.getElementById("trackerModal").style.display = "none";
         document.body.style.overflow = "auto";
-        if (trackerMap) {
-            trackerMap.remove();
-            trackerMap = null;
-            trackerMarkers = [];
+        // Close all popups
+        trackerMarkers.forEach(function(marker) {
+            if (marker.closePopup) {
+                marker.closePopup();
+            }
+        });
+        // Clear markers array but keep map instance for reuse
+        trackerMarkers = [];
+    }
+
+    // Toggle borrower group
+    function toggleBorrowerGroup(groupId) {
+        const items = document.querySelectorAll(`tr.borrower-group-items[data-group="${groupId}"]`);
+        const icon = document.getElementById(`icon-${groupId}`);
+        
+        items.forEach(item => {
+            item.style.display = item.style.display === 'none' ? '' : 'none';
+        });
+        
+        if (icon) {
+            icon.style.transform = items[0] && items[0].style.display !== 'none' ? 'rotate(90deg)' : 'rotate(0deg)';
         }
+    }
+
+    // Open return modal
+    function openReturnModal(groupId, items) {
+        const modal = document.getElementById("returnModal");
+        const container = document.getElementById("returnItemsContainer");
+        
+        if (!modal || !container) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: 'Modal not found. Please refresh the page.',
+                confirmButtonColor: '#dc3545'
+            });
+            return;
+        }
+        
+        container.innerHTML = '';
+        
+        // Check if items is an array
+        if (!Array.isArray(items)) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: 'Invalid data format. Please refresh the page and try again.',
+                confirmButtonColor: '#dc3545'
+            });
+            return;
+        }
+        
+        // Filter only items with active borrows
+        const activeItems = items.filter(item => {
+            return item && item.latest_borrow && item.latest_borrow.status === 'Borrowed';
+        });
+        
+        if (activeItems.length === 0) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'No Active Borrows',
+                text: 'All items for this borrower have already been returned.',
+                confirmButtonColor: '#667eea'
+            });
+            return;
+        }
+        
+        activeItems.forEach((item, index) => {
+            const itemDiv = document.createElement('div');
+            itemDiv.className = 'return-item-group';
+            itemDiv.style.cssText = 'margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 10px; border: 1px solid #e9ecef;';
+            
+            itemDiv.innerHTML = `
+                <div style="margin-bottom: 15px;">
+                    <strong style="color: #2c3e50; font-size: 16px;">${item.device_category}</strong>
+                    <div style="color: #6c757d; font-size: 13px; margin-top: 5px;">
+                        <div><strong>Serial #:</strong> ${item.serial_number}</div>
+                        <div><strong>Room:</strong> ${item.room_title}</div>
+                        <div><strong>Description:</strong> ${item.description || 'N/A'}</div>
+                    </div>
+                </div>
+                <div class="form-group" style="margin-bottom: 15px;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #495057;">Status:</label>
+                    <select name="items[${item.latest_borrow.id}][status]" class="item-status-select" style="width: 100%; padding: 10px; border: 2px solid #e9ecef; border-radius: 8px; font-size: 14px;" onchange="toggleUnusableNote(${item.latest_borrow.id}, this.value)">
+                        <option value="Usable">✅ Usable</option>
+                        <option value="Unusable">❌ Unusable</option>
+                    </select>
+                </div>
+                <div class="unusable-note-group" id="note-group-${item.latest_borrow.id}" style="display: none; margin-top: 15px;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #dc3545;">Reason for Unusable Status:</label>
+                    <textarea name="items[${item.latest_borrow.id}][reason]" class="item-reason-textarea" style="width: 100%; padding: 10px; border: 2px solid #f8d7da; border-radius: 8px; font-size: 14px; min-height: 80px; resize: vertical;" placeholder="Describe the issue or damage with this item..."></textarea>
+                    <input type="hidden" name="items[${item.latest_borrow.id}][room_item_id]" value="${item.id}">
+                </div>
+            `;
+            
+            container.appendChild(itemDiv);
+        });
+        
+        modal.style.display = "block";
+        document.body.style.overflow = "hidden";
+    }
+
+    // Close return modal
+    function closeReturnModal() {
+        const modal = document.getElementById("returnModal");
+        modal.style.display = "none";
+        document.body.style.overflow = "auto";
+        document.getElementById("returnItemsContainer").innerHTML = '';
+    }
+
+    // Toggle unusable note field
+    function toggleUnusableNote(borrowId, status) {
+        const noteGroup = document.getElementById(`note-group-${borrowId}`);
+        const textarea = noteGroup.querySelector('.item-reason-textarea');
+        if (status === 'Unusable') {
+            noteGroup.style.display = 'block';
+            if (textarea) textarea.required = true;
+        } else {
+            noteGroup.style.display = 'none';
+            if (textarea) {
+                textarea.value = '';
+                textarea.required = false;
+            }
+        }
+    }
+
+    // Validate return form
+    function validateReturnForm(event) {
+        const form = event.target;
+        const unusableItems = form.querySelectorAll('select.item-status-select');
+        let isValid = true;
+        let missingReasons = [];
+
+        unusableItems.forEach(select => {
+            if (select.value === 'Unusable') {
+                const borrowId = select.name.match(/\[(\d+)\]/)[1];
+                const reasonTextarea = form.querySelector(`textarea[name="items[${borrowId}][reason]"]`);
+                if (!reasonTextarea || !reasonTextarea.value.trim()) {
+                    isValid = false;
+                    const itemName = select.closest('.return-item-group').querySelector('strong').textContent;
+                    missingReasons.push(itemName);
+                }
+            }
+        });
+
+        if (!isValid) {
+            event.preventDefault();
+            Swal.fire({
+                icon: 'error',
+                title: 'Missing Information',
+                html: `Please provide a reason for the following Unusable item(s):<br><br>${missingReasons.map(name => `• ${name}`).join('<br>')}`,
+                confirmButtonColor: '#dc3545'
+            });
+            return false;
+        }
+
+        return true;
+    }
+
+    // Extend Modal Functions
+    function openExtendModal(borrowId, borrowerName, itemCategory, serialNumber, currentDueDate, extensions = []) {
+        const modal = document.getElementById("extendModal");
+        document.getElementById("extend_borrow_id").value = borrowId;
+        document.getElementById("extend_borrower_name").textContent = borrowerName;
+        document.getElementById("extend_item_info").textContent = itemCategory + ' - ' + serialNumber;
+        
+        if (currentDueDate) {
+            const dueDate = new Date(currentDueDate);
+            const dueDateElement = document.getElementById("extend_current_due_date");
+            dueDateElement.setAttribute('data-datetime', currentDueDate);
+            dueDateElement.textContent = dueDate.toLocaleString('en-US', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        } else {
+            document.getElementById("extend_current_due_date").textContent = 'Not set';
+            document.getElementById("extend_current_due_date").removeAttribute('data-datetime');
+        }
+        
+        // Display extension history
+        const historyContainer = document.getElementById("extensionHistoryContainer");
+        const historyList = document.getElementById("extensionHistoryList");
+        
+        if (extensions && extensions.length > 0) {
+            historyContainer.style.display = 'block';
+            historyList.innerHTML = '';
+            
+            extensions.forEach(function(extension, index) {
+                const extDate = new Date(extension.extended_at);
+                const prevDate = extension.previous_due_date ? new Date(extension.previous_due_date) : null;
+                const newDate = new Date(extension.new_due_date);
+                
+                const durationText = extension.extension_duration.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
+                
+                const extensionItem = document.createElement('div');
+                extensionItem.style.cssText = 'padding: 12px; margin-bottom: 10px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #ffc107;';
+                extensionItem.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
+                        <strong style="color: #2c3e50;">Extension #${extensions.length - index}</strong>
+                        <span style="color: #6c757d; font-size: 12px;">${extDate.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                    <div style="color: #495057; font-size: 13px; margin-bottom: 5px;">
+                        <strong>Duration:</strong> ${durationText} (${extension.days_added} day${extension.days_added > 1 ? 's' : ''})
+                    </div>
+                    ${prevDate ? `
+                        <div style="color: #495057; font-size: 13px; margin-bottom: 5px;">
+                            <strong>Previous Due Date:</strong> ${prevDate.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                    ` : ''}
+                    <div style="color: #28a745; font-size: 13px; margin-bottom: 5px; font-weight: 600;">
+                        <strong>New Due Date:</strong> ${newDate.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                    <div style="color: #6c757d; font-size: 12px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #e9ecef;">
+                        <strong>Reason:</strong> ${extension.reason}
+                    </div>
+                `;
+                historyList.appendChild(extensionItem);
+            });
+        } else {
+            historyContainer.style.display = 'none';
+        }
+        
+        // Reset form
+        document.getElementById("extend_duration").value = '';
+        document.getElementById("extend_reason").value = '';
+        document.getElementById("extendedDueDateDisplay").style.display = 'none';
+        
+        modal.style.display = "block";
+        document.body.style.overflow = "hidden";
+    }
+
+    function closeExtendModal() {
+        const modal = document.getElementById("extendModal");
+        modal.style.display = "none";
+        document.body.style.overflow = "auto";
+        // Reset form
+        document.getElementById("extendForm").reset();
+        document.getElementById("extendedDueDateDisplay").style.display = 'none';
+    }
+
+    function updateExtendedDueDate() {
+        const currentDueDateText = document.getElementById("extend_current_due_date").textContent;
+        const durationSelect = document.getElementById("extend_duration");
+        const extendedDueDateDisplay = document.getElementById("extendedDueDateDisplay");
+        const extendedDueDateText = document.getElementById("extendedDueDateText");
+        
+        if (!currentDueDateText || currentDueDateText === 'Not set' || !durationSelect.value) {
+            extendedDueDateDisplay.style.display = 'none';
+            return;
+        }
+        
+        // Parse current due date from the text
+        const currentDueDate = new Date(document.getElementById("extend_current_due_date").getAttribute('data-datetime') || currentDueDateText);
+        if (isNaN(currentDueDate.getTime())) {
+            extendedDueDateDisplay.style.display = 'none';
+            return;
+        }
+        
+        const duration = durationSelect.value;
+        let daysToAdd = 0;
+        switch(duration) {
+            case '1_day':
+                daysToAdd = 1;
+                break;
+            case '2_days':
+                daysToAdd = 2;
+                break;
+            case '3_days':
+                daysToAdd = 3;
+                break;
+            case '4_days':
+                daysToAdd = 4;
+                break;
+            case '1_week':
+                daysToAdd = 7;
+                break;
+        }
+        
+        const newDueDate = new Date(currentDueDate);
+        newDueDate.setDate(newDueDate.getDate() + daysToAdd);
+        
+        const formattedDate = newDueDate.toLocaleString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+        
+        extendedDueDateText.textContent = formattedDate;
+        extendedDueDateDisplay.style.display = 'block';
+    }
+
+    function validateExtendForm(event) {
+        const duration = document.getElementById("extend_duration").value;
+        const reason = document.getElementById("extend_reason").value.trim();
+        
+        if (!duration) {
+            event.preventDefault();
+            Swal.fire({
+                icon: 'error',
+                title: 'Missing Information',
+                text: 'Please select an extension duration.',
+                confirmButtonColor: '#dc3545'
+            });
+            return false;
+        }
+        
+        if (!reason) {
+            event.preventDefault();
+            Swal.fire({
+                icon: 'error',
+                title: 'Missing Information',
+                text: 'Please provide a reason for the extension.',
+                confirmButtonColor: '#dc3545'
+            });
+            return false;
+        }
+        
+        return true;
     }
 
     // Close modal when clicking outside (enhanced)
     window.onclick = function(event) {
         const borrowModal = document.getElementById("borrowModal");
         const trackerModal = document.getElementById("trackerModal");
+        const returnModal = document.getElementById("returnModal");
+        const extendModal = document.getElementById("extendModal");
         
         if (event.target === borrowModal) {
             closeBorrowModal();
         }
         if (event.target === trackerModal) {
             closeTrackerModal();
+        }
+        if (event.target === returnModal) {
+            closeReturnModal();
+        }
+        if (event.target === extendModal) {
+            closeExtendModal();
         }
     };
 
@@ -1473,6 +1961,8 @@
         if (event.key === 'Escape') {
             closeBorrowModal();
             closeTrackerModal();
+            closeReturnModal();
+            closeExtendModal();
         }
     });
 
@@ -1484,6 +1974,31 @@
             now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
             borrowDateInput.value = now.toISOString().slice(0, 16);
         }
+        
+        // Attach event listeners to Return All buttons
+        document.querySelectorAll('.return-all-btn').forEach(button => {
+            button.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const groupId = this.getAttribute('data-group-id');
+                const itemsJson = this.getAttribute('data-items');
+                let items = [];
+                
+                try {
+                    items = JSON.parse(itemsJson);
+                } catch (error) {
+                    console.error('Error parsing items JSON:', error);
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error',
+                        text: 'Failed to load items data. Please refresh the page.',
+                        confirmButtonColor: '#dc3545'
+                    });
+                    return;
+                }
+                
+                openReturnModal(groupId, items);
+            });
+        });
     });
 
     // Custom Dropdown Functions
@@ -1529,6 +2044,8 @@
         
         document.getElementById('room_item_id').value = itemId;
         document.getElementById('selectedText').textContent = itemText;
+        document.getElementById('selected_pc_number').value = pcNumber || '';
+        document.getElementById('selected_room_title').value = roomTitle || '';
         document.getElementById('dropdownMenu').classList.remove('show');
         
         // Check if full set option should be shown
@@ -1638,82 +2155,259 @@
         }
     }
 
-    // Setup map with satellite view
-    function setupMap() {
+    // Setup map with Leaflet (Free OpenStreetMap) - Fullscreen mode
+    function setupMapFullscreen() {
         const mapDiv = document.getElementById('map');
-        if (map) {
-            mapDiv.style.display = mapDiv.style.display === 'none' ? 'block' : 'none';
-            return;
+        const modal = document.getElementById('borrowModal');
+        const modalContent = modal.querySelector('.modal-content');
+        
+        // Create fullscreen map container
+        let fullscreenMapContainer = document.getElementById('fullscreenMapContainer');
+        if (!fullscreenMapContainer) {
+            fullscreenMapContainer = document.createElement('div');
+            fullscreenMapContainer.id = 'fullscreenMapContainer';
+            fullscreenMapContainer.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; z-index: 10000; display: none; flex-direction: column;';
+            
+            const mapHeader = document.createElement('div');
+            mapHeader.style.cssText = 'padding: 20px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;';
+            mapHeader.innerHTML = `
+                <h3 style="margin: 0; color: white;"><i class="fas fa-map-marker-alt"></i> Select Location</h3>
+                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                    <button onclick="toggleMapType()" id="mapTypeToggleBtn" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 15px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 12px;">
+                        <i class="fas fa-satellite"></i> Satellite
+                    </button>
+                    <button onclick="closeFullscreenMap()" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                        <i class="fas fa-check"></i> Done
+                    </button>
+                </div>
+            `;
+            
+            const mapContainer = document.createElement('div');
+            mapContainer.id = 'fullscreenMap';
+            mapContainer.style.cssText = 'flex: 1; width: 100%;';
+            
+            fullscreenMapContainer.appendChild(mapHeader);
+            fullscreenMapContainer.appendChild(mapContainer);
+            document.body.appendChild(fullscreenMapContainer);
         }
-
-        mapDiv.style.display = 'block';
         
-        // Initialize map with satellite view (using Esri World Imagery)
-        map = L.map('map', {
-            center: [14.5995, 120.9842], // Default to Philippines
-            zoom: 15
-        });
-
-        // Add satellite tile layer (Esri World Imagery)
-        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-            attribution: '© Esri',
-            maxZoom: 19
-        }).addTo(map);
-
-        // Add marker
-        marker = L.marker([14.5995, 120.9842], {draggable: true}).addTo(map);
+        fullscreenMapContainer.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
         
-        // Update coordinates when marker is dragged
-        marker.on('dragend', function(e) {
-            const pos = marker.getLatLng();
-            document.getElementById('latitude').value = pos.lat;
-            document.getElementById('longitude').value = pos.lng;
-        });
-
-        // Get user's current location
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(function(position) {
-                const lat = position.coords.latitude;
-                const lng = position.coords.longitude;
-                map.setView([lat, lng], 18);
-                marker.setLatLng([lat, lng]);
-                document.getElementById('latitude').value = lat;
-                document.getElementById('longitude').value = lng;
+        // Initialize map if not already done
+        if (!map) {
+            const defaultCenter = [14.5995, 120.9842];
+            
+            // Create roadmap layer (OpenStreetMap)
+            roadmapLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors',
+                maxZoom: 19
             });
+            
+            // Create satellite layer (Esri World Imagery - free)
+            satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                attribution: '© Esri',
+                maxZoom: 19
+            });
+            
+            // Initialize map with roadmap as default
+            map = L.map('fullscreenMap', {
+                center: defaultCenter,
+                zoom: 15,
+                layers: [roadmapLayer]
+            });
+            
+            currentBaseLayer = roadmapLayer;
+            currentMapType = 'roadmap';
+
+            // Initialize geocoder (Nominatim - free)
+            geocoder = L.Control.Geocoder.nominatim();
+
+            // Create marker
+            marker = L.marker(defaultCenter, { draggable: true }).addTo(map);
+            
+            // Create popup for place name
+            const popup = L.popup();
+            marker.bindPopup(popup);
+
+            // Update coordinates and place name when marker is dragged
+            marker.on('dragend', function(e) {
+                const pos = marker.getLatLng();
+                document.getElementById('latitude').value = pos.lat;
+                document.getElementById('longitude').value = pos.lng;
+                updatePlaceName(pos);
+            });
+
+            // Update coordinates and place name when map is clicked
+            map.on('click', function(e) {
+                const pos = e.latlng;
+                marker.setLatLng(pos);
+                document.getElementById('latitude').value = pos.lat;
+                document.getElementById('longitude').value = pos.lng;
+                updatePlaceName(pos);
+            });
+
+            // Get current location if available
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(function(position) {
+                    const pos = [position.coords.latitude, position.coords.longitude];
+                    map.setView(pos, 18);
+                    marker.setLatLng(pos);
+                    document.getElementById('latitude').value = pos[0];
+                    document.getElementById('longitude').value = pos[1];
+                    updatePlaceName(L.latLng(pos[0], pos[1]));
+                });
+            }
+            
+            // Update place name for initial position
+            updatePlaceName(L.latLng(defaultCenter[0], defaultCenter[1]));
+        } else {
+            // If map already exists, just invalidate size to refresh
+            setTimeout(() => {
+                map.invalidateSize();
+            }, 100);
         }
-
-        // Update coordinates on click
-        map.on('click', function(e) {
-            const lat = e.latlng.lat;
-            const lng = e.latlng.lng;
-            marker.setLatLng([lat, lng]);
-            document.getElementById('latitude').value = lat;
-            document.getElementById('longitude').value = lng;
-        });
-
-        // Initialize with default values if not set
+        
         if (!document.getElementById('latitude').value) {
             document.getElementById('latitude').value = '14.5995';
             document.getElementById('longitude').value = '120.9842';
         }
     }
 
-    // Initialize tracker map with all borrower and item locations
+    // Update place name using reverse geocoding (Nominatim - free)
+    function updatePlaceName(position) {
+        if (!geocoder || !marker) return;
+        
+        // Use Nominatim reverse geocoding (free, no API key needed)
+        fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.lat}&lon=${position.lng}&zoom=18&addressdetails=1`)
+            .then(response => response.json())
+            .then(data => {
+                if (data && data.display_name) {
+                    const placeName = data.display_name;
+                    marker.getPopup().setContent('<div style="padding: 10px;"><strong>' + placeName + '</strong></div>');
+                    marker.openPopup();
+                }
+            })
+            .catch(error => {
+                console.error('Geocoding error:', error);
+                marker.getPopup().setContent('<div style="padding: 10px;"><strong>Location:</strong> ' + position.lat.toFixed(6) + ', ' + position.lng.toFixed(6) + '</div>');
+                marker.openPopup();
+            });
+    }
+
+    // Toggle map type between roadmap and satellite
+    function toggleMapType() {
+        if (!map || !roadmapLayer || !satelliteLayer) return;
+        
+        const btn = document.getElementById('mapTypeToggleBtn');
+        if (currentMapType === 'roadmap') {
+            // Switch to satellite
+            map.removeLayer(currentBaseLayer);
+            map.addLayer(satelliteLayer);
+            currentBaseLayer = satelliteLayer;
+            currentMapType = 'satellite';
+            btn.innerHTML = '<i class="fas fa-map"></i> Map';
+            btn.style.background = 'rgba(255,255,255,0.4)';
+        } else {
+            // Switch to roadmap
+            map.removeLayer(currentBaseLayer);
+            map.addLayer(roadmapLayer);
+            currentBaseLayer = roadmapLayer;
+            currentMapType = 'roadmap';
+            btn.innerHTML = '<i class="fas fa-satellite"></i> Satellite';
+            btn.style.background = 'rgba(255,255,255,0.2)';
+        }
+    }
+
+    function closeFullscreenMap() {
+        const fullscreenMapContainer = document.getElementById('fullscreenMapContainer');
+        if (fullscreenMapContainer) {
+            fullscreenMapContainer.style.display = 'none';
+            document.body.style.overflow = 'auto';
+        }
+    }
+
+    // Update due date based on borrow date and duration
+    function updateDueDate() {
+        const borrowDateInput = document.getElementById('borrow_date');
+        const durationSelect = document.getElementById('borrow_duration');
+        const dueDateDisplay = document.getElementById('dueDateDisplay');
+        const dueDateText = document.getElementById('dueDateText');
+        
+        if (!borrowDateInput.value || !durationSelect.value) {
+            dueDateDisplay.style.display = 'none';
+            return;
+        }
+        
+        const borrowDate = new Date(borrowDateInput.value);
+        const duration = durationSelect.value;
+        
+        let daysToAdd = 0;
+        switch(duration) {
+            case '1_day':
+                daysToAdd = 1;
+                break;
+            case '2_days':
+                daysToAdd = 2;
+                break;
+            case '3_days':
+                daysToAdd = 3;
+                break;
+            case '4_days':
+                daysToAdd = 4;
+                break;
+            case '1_week':
+                daysToAdd = 7;
+                break;
+        }
+        
+        const dueDate = new Date(borrowDate);
+        dueDate.setDate(dueDate.getDate() + daysToAdd);
+        
+        const formattedDate = dueDate.toLocaleString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+        
+        dueDateText.textContent = formattedDate;
+        dueDateDisplay.style.display = 'block';
+    }
+
+    // Initialize tracker map with all borrower and item locations using Leaflet
     function initTrackerMap() {
         if (trackerMap) return;
 
         const activities = @json($activities);
         
-        trackerMap = L.map('trackerMap', {
-            center: [14.5995, 120.9842],
-            zoom: 13
+        const defaultCenter = [14.5995, 120.9842];
+        
+        // Create roadmap layer
+        const roadmapLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
+            maxZoom: 19
         });
-
-        // Add satellite tile layer
-        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        
+        // Create satellite layer
+        const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
             attribution: '© Esri',
             maxZoom: 19
-        }).addTo(trackerMap);
+        });
+        
+        trackerMap = L.map('trackerMap', {
+            center: defaultCenter,
+            zoom: 13,
+            layers: [roadmapLayer]
+        });
+
+        // Add layer control for switching between roadmap and satellite
+        const baseMaps = {
+            "Map": roadmapLayer,
+            "Satellite": satelliteLayer
+        };
+        L.control.layers(baseMaps).addTo(trackerMap);
 
         const bounds = [];
         
@@ -1721,47 +2415,96 @@
             if (activity.latitude && activity.longitude) {
                 const lat = parseFloat(activity.latitude);
                 const lng = parseFloat(activity.longitude);
+                const position = [lat, lng];
                 
-                // Create popup content
-                const roomItem = activity.room_item || {};
-                const popupContent = `
-                    <div style="min-width: 200px;">
-                        <strong>${activity.borrower_name}</strong><br>
-                        ${activity.position ? activity.position + '<br>' : ''}
-                        ${activity.department ? activity.department + '<br>' : ''}
-                        <hr>
-                        <strong>Item:</strong> ${roomItem.serial_number || 'N/A'}<br>
-                        <strong>Category:</strong> ${roomItem.device_category || 'N/A'}<br>
-                        <strong>Status:</strong> ${activity.status}<br>
-                        <strong>Borrow Date:</strong> ${new Date(activity.borrow_date).toLocaleString()}
-                    </div>
-                `;
+                // Create marker with different colors for borrowed vs returned
+                const markerColor = activity.status === 'Borrowed' ? '#dc3545' : '#28a745';
                 
-                // Create marker with different colors for borrower and item
-                const markerColor = activity.status === 'Borrowed' ? 'red' : 'green';
-                const icon = L.divIcon({
+                // Create custom icon
+                const customIcon = L.divIcon({
                     className: 'custom-marker',
                     html: `<div style="background-color: ${markerColor}; width: 20px; height: 20px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3);"></div>`,
                     iconSize: [20, 20],
                     iconAnchor: [10, 10]
                 });
                 
-                const m = L.marker([lat, lng], {icon: icon})
-                    .addTo(trackerMap);
+                const marker = L.marker(position, { icon: customIcon });
                 
-                // Add click event to show borrower modal (no popup, only modal)
-                m.on('click', function() {
-                    showBorrowerModal(activity);
-                });
+                // Get place name using Nominatim (free reverse geocoding)
+                fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`)
+                    .then(response => response.json())
+                    .then(data => {
+                        const placeName = data && data.display_name ? data.display_name : `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+                        
+                        // Create popup content with place name and borrower info
+                        const uniqueBtnId = 'viewDetailsBtn-' + trackerMarkers.length + '-' + Date.now();
+                        const popupContent = `
+                            <div style="padding: 10px; max-width: 300px;">
+                                <h4 style="margin: 0 0 10px 0; color: #2c3e50;">${activity.borrower_name || 'Unknown'}</h4>
+                                <p style="margin: 5px 0; color: #6c757d; font-size: 12px;"><strong>Location:</strong> ${placeName}</p>
+                                <p style="margin: 5px 0; color: #6c757d; font-size: 12px;"><strong>Status:</strong> <span style="color: ${markerColor};">${activity.status}</span></p>
+                                <button id="${uniqueBtnId}" style="margin-top: 10px; padding: 5px 10px; background: #667eea; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 12px;">View Details</button>
+                            </div>
+                        `;
+                        
+                        marker.bindPopup(popupContent);
+                        
+                        // Store activity data on marker
+                        marker.activityData = activity;
+                        
+                        // Create a closure to capture activity data
+                        (function(activityData, btnId) {
+                            marker.on('click', function() {
+                                // Add click listener to button after popup opens
+                                setTimeout(function() {
+                                    const btn = document.getElementById(btnId);
+                                    if (btn) {
+                                        btn.addEventListener('click', function() {
+                                            showBorrowerModal(activityData);
+                                        });
+                                    }
+                                }, 100);
+                            });
+                        })(activity, uniqueBtnId);
+                    })
+                    .catch(error => {
+                        console.error('Geocoding error:', error);
+                        // Fallback popup without place name
+                        const uniqueBtnId = 'viewDetailsBtn-' + trackerMarkers.length + '-' + Date.now();
+                        const popupContent = `
+                            <div style="padding: 10px; max-width: 300px;">
+                                <h4 style="margin: 0 0 10px 0; color: #2c3e50;">${activity.borrower_name || 'Unknown'}</h4>
+                                <p style="margin: 5px 0; color: #6c757d; font-size: 12px;"><strong>Location:</strong> ${lat.toFixed(6)}, ${lng.toFixed(6)}</p>
+                                <p style="margin: 5px 0; color: #6c757d; font-size: 12px;"><strong>Status:</strong> <span style="color: ${markerColor};">${activity.status}</span></p>
+                                <button id="${uniqueBtnId}" style="margin-top: 10px; padding: 5px 10px; background: #667eea; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 12px;">View Details</button>
+                            </div>
+                        `;
+                        marker.bindPopup(popupContent);
+                        marker.activityData = activity;
+                        
+                        (function(activityData, btnId) {
+                            marker.on('click', function() {
+                                setTimeout(function() {
+                                    const btn = document.getElementById(btnId);
+                                    if (btn) {
+                                        btn.addEventListener('click', function() {
+                                            showBorrowerModal(activityData);
+                                        });
+                                    }
+                                }, 100);
+                            });
+                        })(activity, uniqueBtnId);
+                    });
                 
-                trackerMarkers.push(m);
-                bounds.push([lat, lng]);
+                marker.addTo(trackerMap);
+                trackerMarkers.push(marker);
+                bounds.push(position);
             }
         });
 
         // Fit map to show all markers
         if (bounds.length > 0) {
-            trackerMap.fitBounds(bounds, {padding: [50, 50]});
+            trackerMap.fitBounds(bounds, { padding: [50, 50] });
         }
     }
 
@@ -1769,6 +2512,21 @@
     function showBorrowerModal(activity) {
         const roomItem = activity.room_item || {};
         const borrowerPhoto = activity.borrower_photo ? `/storage/${activity.borrower_photo}` : null;
+        const itemsCount = activity.items_count || 1;
+        const allItems = activity.all_items || [{
+            serial_number: roomItem.serial_number || 'N/A',
+            device_category: roomItem.device_category || 'N/A',
+            room_title: roomItem.room_title || 'N/A'
+        }];
+        
+        let itemsListHtml = '';
+        if (itemsCount > 1) {
+            itemsListHtml = '<div style="margin-top: 10px; max-height: 200px; overflow-y: auto;"><strong>All Borrowed Items (' + itemsCount + '):</strong><ul style="margin: 10px 0; padding-left: 20px;">';
+            allItems.forEach(function(item) {
+                itemsListHtml += '<li style="margin: 5px 0;"><strong>' + (item.device_category || 'N/A') + '</strong> - ' + (item.serial_number || 'N/A') + ' (' + (item.room_title || 'N/A') + ')</li>';
+            });
+            itemsListHtml += '</ul></div>';
+        }
         
         let htmlContent = `
             <div style="text-align: left; padding: 10px;">
@@ -1778,6 +2536,7 @@
                         <h3 style="margin: 0; color: #2c3e50;">${activity.borrower_name}</h3>
                         ${activity.position ? `<p style="margin: 5px 0; color: #6c757d;"><strong>Position:</strong> ${activity.position}</p>` : ''}
                         ${activity.department ? `<p style="margin: 5px 0; color: #6c757d;"><strong>Department:</strong> ${activity.department}</p>` : ''}
+                        ${itemsCount > 1 ? `<p style="margin: 5px 0; color: #667eea; font-weight: 600;"><strong>Items Borrowed:</strong> ${itemsCount} item(s)</p>` : ''}
                     </div>
                 </div>
                 <hr style="margin: 20px 0; border: none; border-top: 2px solid #e9ecef;">
@@ -1787,12 +2546,15 @@
                         <p style="margin: 5px 0;"><strong>Serial #:</strong> ${roomItem.serial_number || 'N/A'}</p>
                         <p style="margin: 5px 0;"><strong>Category:</strong> ${roomItem.device_category || 'N/A'}</p>
                         <p style="margin: 5px 0;"><strong>Room:</strong> ${roomItem.room_title || 'N/A'}</p>
+                        ${itemsListHtml}
                     </div>
                     <div>
                         <h4 style="margin: 0 0 10px 0; color: #667eea;">📅 Borrow Details</h4>
                         <p style="margin: 5px 0;"><strong>Status:</strong> <span style="padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: 600; ${activity.status === 'Borrowed' ? 'background: #fff3cd; color: #856404;' : 'background: #d4edda; color: #155724;'}">${activity.status}</span></p>
                         <p style="margin: 5px 0;"><strong>Borrow Date:</strong><br>${new Date(activity.borrow_date).toLocaleString()}</p>
+                        ${activity.due_date ? `<p style="margin: 5px 0;"><strong>Due Date:</strong><br>${new Date(activity.due_date).toLocaleString()}</p>` : ''}
                         ${activity.return_date ? `<p style="margin: 5px 0;"><strong>Return Date:</strong><br>${new Date(activity.return_date).toLocaleString()}</p>` : '<p style="margin: 5px 0; color: #dc3545;"><strong>Return Date:</strong> Not Returned</p>'}
+                        ${activity.reason ? `<p style="margin: 5px 0;"><strong>Reason:</strong> ${activity.reason}</p>` : ''}
                     </div>
                 </div>
                 ${activity.latitude && activity.longitude ? `
@@ -1800,7 +2562,7 @@
                     <div>
                         <h4 style="margin: 0 0 10px 0; color: #667eea;">📍 Location</h4>
                         <p style="margin: 5px 0;"><strong>Coordinates:</strong> ${parseFloat(activity.latitude).toFixed(6)}, ${parseFloat(activity.longitude).toFixed(6)}</p>
-                        <a href="https://www.google.com/maps?q=${activity.latitude},${activity.longitude}" target="_blank" style="color: #667eea; text-decoration: none;">🗺️ View on Google Maps</a>
+                        <a href="https://www.openstreetmap.org/?mlat=${activity.latitude}&mlon=${activity.longitude}&zoom=15" target="_blank" style="color: #667eea; text-decoration: none;">🗺️ View on OpenStreetMap</a>
                     </div>
                 ` : ''}
             </div>
