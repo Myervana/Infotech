@@ -17,17 +17,6 @@
 # Disable directory browsing
 Options -Indexes
 
-# Prevent script execution in storage and vendor directories
-<Directory "/storage">
-    RemoveHandler .php .phtml .php3 .php4 .php5 .php7
-    RemoveType .php .phtml .php3 .php4 .php5 .php7
-</Directory>
-
-<Directory "/vendor">
-    RemoveHandler .php .phtml .php3 .php4 .php5 .php7
-    RemoveType .php .phtml .php3 .php4 .php5 .php7
-</Directory>
-
 # Block access to sensitive files
 <FilesMatch "(^\.|\.env|composer\.json|artisan|server\.php|.git|.env|.htaccess|phpunit\.xml|storage|vendor)">
     Order allow,deny
